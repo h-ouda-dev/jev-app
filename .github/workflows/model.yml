@@ -87,12 +87,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           FILES="dist/model.onnx dist/tokenizer.json dist/jev_config.json dist/manifest.json"
+          VARIANT=$(python -c "import json;print(json.load(open('dist/manifest.json'))['variant'])")
+          TITLE="Jev on-device model ($SOURCE_MODEL, $VARIANT ONNX)"
+          NOTES="Downloaded by the Jev app from Settings. Built from $SOURCE_MODEL ($VARIANT) by .github/workflows/model.yml at $GITHUB_SHA."
           if gh release view "$MODEL_TAG" >/dev/null 2>&1; then
             gh release upload "$MODEL_TAG" $FILES --clobber
+            gh release edit "$MODEL_TAG" --title "$TITLE" --notes "$NOTES"
           else
-            gh release create "$MODEL_TAG" $FILES --prerelease \
-              --title "Jev on-device model ($SOURCE_MODEL, int8 ONNX)" \
-              --notes "Downloaded by the Jev app from Settings. Built from $SOURCE_MODEL by .github/workflows/model.yml at $GITHUB_SHA."
+            gh release create "$MODEL_TAG" $FILES --prerelease --title "$TITLE" --notes "$NOTES"
           fi
 
       - uses: actions/upload-artifact@v4

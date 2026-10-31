@@ -68,7 +68,7 @@ tools/export_jev_onnx.py  Exports a ModernBERT decision model to ONNX for the ap
 Jev works with built-in rules out of the box. To use the model, tap **Download model** on the Inbox card or under Settings → On-device model. The app then:
 
 1. Fetches `manifest.json` from the `model-v1` GitHub release. This is the only thing Jev downloads.
-2. Downloads `model.onnx` (~150 MB, int8), `tokenizer.json` and `jev_config.json` in the background, with a progress notification. Wi-Fi only is on by default, interrupted downloads resume where they stopped, and every file is checked against its SHA-256 from the manifest before it's used.
+2. Downloads `model.onnx` (the smallest variant that passes the agreement gate; currently fp32, about 600 MB), `tokenizer.json` and `jev_config.json` in the background, with a progress notification. Wi-Fi only is on by default, interrupted downloads resume where they stopped, and every file is checked against its SHA-256 from the manifest before it's used.
 3. Installs and loads the model with ONNX Runtime, then **runs the self-test automatically**. The self-test is 23 labelled examples across triage, the scam checklist and budget categories. You see the score and ms per decision on your phone, and can open the result of every individual test.
 
 **Settings → Diagnostics → Check that everything works** tests the live path end to end. Jev sends itself three test notifications (a parcel scam, a promo and an emergency). It then checks that the notification listener received them, that the scam shield flagged the scam, and that triage sorted the other two correctly. It also confirms notification access, alert permission and model status.

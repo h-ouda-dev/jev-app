@@ -22,7 +22,7 @@ import java.io.IOException
 
 /**
  * Downloads, verifies, installs, loads and self-tests the model in the
- * background, so the user can leave the app while ~150 MB arrives.
+ * background, so the user can leave the app while the model (a few hundred MB) arrives.
  */
 class ModelDownloadWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 

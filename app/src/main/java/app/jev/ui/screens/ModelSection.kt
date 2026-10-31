@@ -72,7 +72,7 @@ fun ModelCard(vm: MainViewModel, onImport: () -> Unit) {
                 }
                 model is ModelState.Failed -> StatusLine(false, "Failed to load: ${(model as ModelState.Failed).message}. Using built-in rules.")
                 else -> Text(
-                    "Not installed. Jev is using its built-in rules. Download the ModernBERT decision model (about 150 MB, one time) for smarter decisions. Your notifications are never uploaded; this is the only thing Jev downloads.",
+                    "Not installed. Jev is using its built-in rules. Download the ModernBERT decision model (a one-time download of a few hundred MB) for smarter decisions. Your notifications are never uploaded; this is the only thing Jev downloads.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }

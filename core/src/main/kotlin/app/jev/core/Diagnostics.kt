@@ -106,12 +106,8 @@ object Diagnostics {
 
         fun scam(name: String, text: String, flag: RedFlag, yes: Boolean) {
             val req = pipeline.shield.request(text, flag)
-            val evidenceRules = { r: DecisionRequest ->
-                pipeline.shield.check(text).checks.first { it.flag == flag }.let { c ->
-                    Decision.fromLogits(r.choices, floatArrayOf(c.probability, 1 - c.probability), app.jev.core.model.DecisionSource.RULES, 0.25f)
-                }
-            }
-            out += DiagnosticCase("Scam shield", name, req, setOf(if (yes) ScamShield.YES else ScamShield.NO), 0f, evidenceRules)
+            val evidenceRules = { _: DecisionRequest -> pipeline.shield.rules(text, flag) }
+            out += DiagnosticCase("Scam shield", name, req, setOf(if (yes) ScamShield.YES else ScamShield.NO), ScamShield.RULES_WEIGHT, evidenceRules)
         }
         val parcel = "DHL: Your parcel is on hold. Pay the customs fee of QAR 9.50 within 24 hours or it will be returned: dhl-parcel-fee.xyz/pay"
         val hiMum = "Hi mum, I lost my phone and this is my new number. Please send me the 6-digit code you just received, it's urgent"

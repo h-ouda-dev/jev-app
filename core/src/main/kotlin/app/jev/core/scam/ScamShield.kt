@@ -58,7 +58,7 @@ class ScamShield(private val router: DecisionRouter) {
             val decision = when (flag) {
                 // Link analysis is deterministic and better than any language model guess.
                 RedFlag.SUSPICIOUS_LINK -> rulesFor(flag, evidence)
-                else -> router.decide(request) { rulesFor(flag, evidence) }
+                else -> router.decide(request, RULES_WEIGHT) { rulesFor(flag, evidence) }
             }
             val pYes = decision.probabilityOf(YES)
             FlagCheck(flag, pYes >= 0.5f, pYes, evidence)
@@ -99,6 +99,10 @@ class ScamShield(private val router: DecisionRouter) {
         }
     }
 
+    /** The rule-based answer to one red-flag question (what the model is blended with). */
+    fun rules(text: String, flag: RedFlag, sourcePackage: String? = null): Decision =
+        rulesFor(flag, evidence(flag, text, LinkInspector.inspect(text), sourcePackage))
+
     private fun rulesFor(flag: RedFlag, evidence: List<String>): Decision {
         val r = ScoredRules(YES_NO).add(NO, 1.5f)
         if (evidence.isNotEmpty()) r.add(YES, 1.2f + evidence.size.coerceAtMost(3) * 0.8f)
@@ -106,6 +110,8 @@ class ScamShield(private val router: DecisionRouter) {
     }
 
     companion object {
+        /** The model is blended with the evidence rules so it can't make the shield worse than rules alone. */
+        const val RULES_WEIGHT = 1f
         const val YES = "yes"
         const val NO = "no"
         val YES_NO = listOf(YES, NO)

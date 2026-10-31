@@ -90,7 +90,7 @@ fun InboxScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             item {
                 InfoCard(
                     "Get the on-device model",
-                    "Jev works now with built-in rules. Download the ModernBERT decision model (about 150 MB, on Wi-Fi) for smarter decisions. It runs fully offline afterwards and Jev tests it automatically.",
+                    "Jev works now with built-in rules. Download the ModernBERT decision model (a one-time download of a few hundred MB, on Wi-Fi) for smarter decisions. It runs fully offline afterwards and Jev tests it automatically.",
                 ) {
                     Button(onClick = { vm.downloadModel(wifiOnly = true) }) { Text("Download model") }
                 }

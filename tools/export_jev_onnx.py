@@ -80,6 +80,28 @@ def build_quantized_variants(fp32, out_dir):
     path = os.path.join(out_dir, "model_int8.onnx")
     quantize_dynamic(fp32, path, weight_type=QuantType.QInt8)
     variants["int8-dynamic"] = path
+
+    # int8 only for MatMuls against weights: attention score/value MatMuls (two
+    # activations) and the embedding table stay fp32. Dynamic quantisation of
+    # attention is a common cause of accuracy collapse in encoders.
+    m = onnx.load(fp32)
+    weights = {i.name for i in m.graph.initializer}
+    activation_matmuls = [n.name for n in m.graph.node
+                          if n.op_type == "MatMul" and not any(i in weights for i in n.input)]
+    print(f"excluding {len(activation_matmuls)} activation x activation MatMuls from int8")
+    for per_channel in (False, True):
+        path = os.path.join(out_dir, f"model_int8w{'_pc' if per_channel else ''}.onnx")
+        quantize_dynamic(fp32, path, weight_type=QuantType.QInt8, op_types_to_quantize=["MatMul"],
+                         nodes_to_exclude=activation_matmuls, per_channel=per_channel)
+        variants["int8-weights" + ("-perchannel" if per_channel else "")] = path
+
+    try:
+        from onnxconverter_common import float16
+        path = os.path.join(out_dir, "model_fp16.onnx")
+        onnx.save(float16.convert_float_to_float16(onnx.load(fp32), keep_io_types=True), path)
+        variants["fp16"] = path
+    except Exception as e:
+        print("fp16 variant failed:", repr(e))
     return variants
 
 
@@ -104,7 +126,11 @@ def choose_variant(variants, tok, min_agreement, score_index, contradiction_inde
     reference = None
     results = {}
     for name in ["fp32"] + [n for n in variants if n != "fp32"]:
-        sess = ort.InferenceSession(variants[name])
+        try:
+            sess = ort.InferenceSession(variants[name])
+        except Exception as e:
+            print(f"variant {name:13s} cannot run in ONNX Runtime CPU: {type(e).__name__}")
+            continue
         got = [decide(sess, tok, d["premise"], d["hypotheses"], d["kind"], score_index, contradiction_index) for d in decisions]
         if reference is None:
             reference = got
@@ -165,7 +191,7 @@ def write_reference(out_dir, tok, model, max_length):
         json.dump({"tokenization": rows}, f, ensure_ascii=False, indent=1)
 
 
-def write_manifest(out_dir, model_name, version):
+def write_manifest(out_dir, model_name, version, variant):
     import hashlib
     files = []
     for name in ("model.onnx", "tokenizer.json", "jev_config.json"):
@@ -175,7 +201,7 @@ def write_manifest(out_dir, model_name, version):
             for chunk in iter(lambda: f.read(1 << 20), b""):
                 h.update(chunk)
         files.append({"name": name, "size": os.path.getsize(path), "sha256": h.hexdigest()})
-    manifest = {"id": version, "source_model": model_name, "files": files}
+    manifest = {"id": version, "source_model": model_name, "variant": variant, "files": files}
     with open(os.path.join(out_dir, "manifest.json"), "w") as f:
         json.dump(manifest, f, indent=2)
     return manifest
@@ -257,7 +283,7 @@ def main():
     print("labels:", id2label, "score_index:", config["score_index"], "contradiction_index:", config["contradiction_index"])
     print("logits for [urgent, noise]:", out.tolist())
     write_reference(args.out, tok, model, args.max_length)
-    manifest = write_manifest(args.out, args.model, args.version)
+    manifest = write_manifest(args.out, args.model, args.version, chosen)
     print(json.dumps(manifest, indent=2))
     print("Wrote", args.out, "->", sorted(os.listdir(args.out)))
     print("model.onnx size:", os.path.getsize(final) / 1e6, "MB")
