@@ -13,7 +13,7 @@ interface NotificationDao {
     suspend fun insert(r: NotificationRecord): Long
 
     @Query("SELECT * FROM notifications ORDER BY postedAt DESC LIMIT :limit")
-    fun recent(limit: Int = 500): Flow<List<NotificationRecord>>
+    fun recent(limit: Int): Flow<List<NotificationRecord>>
 
     @Query("SELECT * FROM notifications WHERE scamVerdict IS NOT NULL AND scamVerdict != 'SAFE' ORDER BY postedAt DESC LIMIT 100")
     fun scamWarnings(): Flow<List<NotificationRecord>>

@@ -1,5 +1,6 @@
 package app.jev.ui.theme
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -17,13 +18,15 @@ fun JevTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
     val ctx = LocalContext.current
     // Android 12+ (the S25 Ultra) gets Material You colours from the wallpaper.
-    val scheme = if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+    val scheme = when {
+        Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+        dark -> fallbackDark
+        else -> fallbackLight
+    }
     MaterialTheme(colorScheme = scheme, content = content)
 }
 
-@Suppress("unused")
 private val fallbackLight = lightColorScheme(primary = Color(0xFF1B3A5C))
-@Suppress("unused")
 private val fallbackDark = darkColorScheme(primary = Color(0xFF9CCAFF))
 
 fun bucketColor(b: TriageBucket): Color = when (b) {

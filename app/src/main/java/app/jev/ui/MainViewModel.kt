@@ -1,9 +1,8 @@
 package app.jev.ui
 
 import android.app.Application
-import android.content.ComponentName
 import android.net.Uri
-import android.provider.Settings
+import androidx.core.app.NotificationManagerCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import app.jev.core.money.BudgetCategory
@@ -18,7 +17,6 @@ import app.jev.data.SenderRule
 import app.jev.data.TransactionRecord
 import app.jev.jev
 import app.jev.ml.ModelState
-import app.jev.service.JevNotificationListener
 import app.jev.service.toPoint
 import app.jev.work.DigestScheduler
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +36,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val settings: StateFlow<AppSettings> = app.settings.flow
     val modelState: StateFlow<ModelState> = app.models.state
 
-    val notifications = db.notifications().recent().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val notifications = db.notifications().recent(500).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val scamWarnings = db.notifications().scamWarnings().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val transactions = db.transactions().all().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val subscriptions: StateFlow<List<Subscription>> = db.transactions().all()
@@ -54,9 +52,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun consumeMessage() { _message.value = null }
 
     fun hasNotificationAccess(): Boolean {
-        val cn = ComponentName(app, JevNotificationListener::class.java)
-        val enabled = Settings.Secure.getString(app.contentResolver, "enabled_notification_listeners") ?: return false
-        return enabled.split(':').any { ComponentName.unflattenFromString(it) == cn }
+        return NotificationManagerCompat.getEnabledListenerPackages(app).contains(app.packageName)
     }
 
     // ---- Scam shield ----
