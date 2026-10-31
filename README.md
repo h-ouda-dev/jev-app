@@ -32,18 +32,18 @@ The scam shield asks each red-flag question separately. That's how it gives an e
 
 ```
 core/   Pure Kotlin. No Android dependency; unit-tested on the JVM.
-        model/      Decision, DecisionRouter, PairScoringDecisionModel, JevModelConfig
+        model/      Decision, DecisionRouter, PairScoringDecisionModel, ModelConfig
         tokenizer/  Byte-level BPE tokenizer that reads Hugging Face tokenizer.json (ModernBERT)
         triage/     TriageEngine (+ VIP and learned-rule handling)
         scam/       ScamShield (red-flag checklist), LinkInspector
         money/      TransactionParser, Categorizer, SpendingInsights (anomalies, subscriptions)
-        JevPipeline.kt  One notification in → triage + scam report + transaction out
+        HeronPipeline.kt  One notification in → triage + scam report + transaction out
 app/    Android (Kotlin, Jetpack Compose, Room, WorkManager, ONNX Runtime)
-        service/JevNotificationListener  The notification listener that feeds the pipeline
+        service/HeronNotificationListener  The notification listener that feeds the pipeline
         ml/          ONNX Runtime encoder + model import/loading
         work/        Digest delivery at the times you choose
         ui/          Inbox · Shield · Money · Settings
-tools/export_jev_onnx.py  Exports a ModernBERT decision model to ONNX for the app
+tools/export_model.py  Exports a ModernBERT decision model to ONNX for the app
 ```
 
 ## Get it on your Galaxy S25 Ultra
@@ -68,7 +68,7 @@ tools/export_jev_onnx.py  Exports a ModernBERT decision model to ONNX for the ap
 Jev works with built-in rules out of the box. To use the model, tap **Download model** on the Inbox card or under Settings → On-device model. The app then:
 
 1. Fetches `manifest.json` from the `model-v1` GitHub release. This is the only thing Jev downloads.
-2. Downloads `model.onnx` (the smallest variant that passes the agreement gate; currently fp32, about 600 MB), `tokenizer.json` and `jev_config.json` in the background, with a progress notification. Wi-Fi only is on by default, interrupted downloads resume where they stopped, and every file is checked against its SHA-256 from the manifest before it's used.
+2. Downloads `model.onnx` (the smallest variant that passes the agreement gate; currently fp32, about 600 MB), `tokenizer.json` and `decision_config.json` in the background, with a progress notification. Wi-Fi only is on by default, interrupted downloads resume where they stopped, and every file is checked against its SHA-256 from the manifest before it's used.
 3. Installs and loads the model with ONNX Runtime, then **runs the self-test automatically**. The self-test is 23 labelled examples across triage, the scam checklist and budget categories. You see the score and ms per decision on your phone, and can open the result of every individual test.
 
 **Settings → Diagnostics → Check that everything works** tests the live path end to end. Jev sends itself three test notifications (a parcel scam, a promo and an emergency). It then checks that the notification listener received them, that the scam shield flagged the scam, and that triage sorted the other two correctly. It also confirms notification access, alert permission and model status.
@@ -76,24 +76,24 @@ Jev works with built-in rules out of the box. To use the model, tap **Download m
 ### How the model is built and tested
 
 `.github/workflows/model.yml` builds the release:
-1. **Export.** `tools/export_jev_onnx.py` exports [`tasksource/ModernBERT-base-nli`](https://huggingface.co/tasksource/ModernBERT-base-nli) (ModernBERT-base, 149M params) to ONNX and quantises it to int8. It also reports whether batching or quantisation changes the outputs.
+1. **Export.** `tools/export_model.py` exports [`tasksource/ModernBERT-base-nli`](https://huggingface.co/tasksource/ModernBERT-base-nli) (ModernBERT-base, 149M params) to ONNX and quantises it to int8. It also reports whether batching or quantisation changes the outputs.
 2. **Verify.** `RealModelTest` runs the exported model through the app's own Kotlin code: the tokenizer must match Hugging Face's token IDs exactly, the logits must match Python's ONNX Runtime, and the self-test must pass.
 3. **Publish.** Only if all of that passes are the files published as the `model-v1` release.
 
 `.github/workflows/android.yml` builds the APK, then runs `OnDeviceTest` on an Android 15 emulator. The test downloads the published model, checks resume and checksum protection, runs ONNX Runtime on Android, runs the self-test, and runs the live notification pipeline check.
 
-The official ModernBERT-JEV checkpoint isn't publicly downloadable, so CI can't fetch it. The app is built so it can be swapped in: point `--model` at any sequence-classification checkpoint and adjust `jev_config.json`.
+The official ModernBERT-JEV checkpoint isn't publicly downloadable, so CI can't fetch it. The app is built so it can be swapped in: point `--model` at any sequence-classification checkpoint and adjust `decision_config.json`.
 
 To build a model by hand and import it instead:
 
 ```bash
 pip install -r tools/requirements.txt
-python tools/export_jev_onnx.py --model tasksource/ModernBERT-base-nli --out jev-model
+python tools/export_model.py --model tasksource/ModernBERT-base-nli --out jev-model
 ```
 
-Then use **Settings → Import files** and pick `model.onnx`, `tokenizer.json` and `jev_config.json`.
+Then use **Settings → Import files** and pick `model.onnx`, `tokenizer.json` and `decision_config.json`.
 
-`jev_config.json` controls how the model is prompted:
+`decision_config.json` controls how the model is prompted:
 
 ```json
 {

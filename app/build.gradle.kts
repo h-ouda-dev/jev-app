@@ -6,15 +6,15 @@ plugins {
 }
 
 android {
-    namespace = "app.jev"
+    namespace = "app.heron"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "app.jev"
+        applicationId = "app.heron"
         minSdk = 29
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.2.0"
         // The S25 Ultra (and every modern phone) is arm64; x86_64 keeps the emulator working.
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
 
@@ -51,6 +51,7 @@ dependencies {
     implementation(project(":core"))
 
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

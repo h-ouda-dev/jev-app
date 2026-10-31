@@ -68,7 +68,7 @@ jobs:
           PY
 
       - name: Export ${{ env.SOURCE_MODEL }} to ONNX (int8)
-        run: python tools/export_jev_onnx.py --model "$SOURCE_MODEL" --out dist --version "$MODEL_TAG"
+        run: python tools/export_model.py --model "$SOURCE_MODEL" --out dist --version "$MODEL_TAG"
 
       - uses: actions/setup-java@v5
         with:
@@ -80,16 +80,16 @@ jobs:
       - name: Verify model with the app's Kotlin code (tokenizer, logits, self-test)
         env:
           JEV_MODEL_DIR: ${{ github.workspace }}/dist
-        run: ./gradlew :core:test --tests 'app.jev.core.RealModelTest' --stacktrace
+        run: ./gradlew :core:test --tests 'app.heron.core.RealModelTest' --stacktrace
 
       - name: Publish release ${{ env.MODEL_TAG }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          FILES="dist/model.onnx dist/tokenizer.json dist/jev_config.json dist/manifest.json"
+          FILES="dist/model.onnx dist/tokenizer.json dist/decision_config.json dist/manifest.json"
           VARIANT=$(python -c "import json;print(json.load(open('dist/manifest.json'))['variant'])")
-          TITLE="Jev on-device model ($SOURCE_MODEL, $VARIANT ONNX)"
-          NOTES="Downloaded by the Jev app from Settings. Built from $SOURCE_MODEL ($VARIANT) by .github/workflows/model.yml at $GITHUB_SHA."
+          TITLE="Heron on-device model ($SOURCE_MODEL, $VARIANT ONNX)"
+          NOTES="Downloaded by the Heron app from Settings. Built from $SOURCE_MODEL ($VARIANT) by .github/workflows/model.yml at $GITHUB_SHA."
           if gh release view "$MODEL_TAG" >/dev/null 2>&1; then
             gh release upload "$MODEL_TAG" $FILES --clobber
             gh release edit "$MODEL_TAG" --title "$TITLE" --notes "$NOTES"
@@ -100,6 +100,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: jev-model
+          name: heron-model
           path: dist/
           if-no-files-found: ignore

@@ -24,7 +24,7 @@ tasks.test {
     // Point at an exported model folder to run RealModelTest; skipped otherwise.
     System.getenv("JEV_MODEL_DIR")?.let {
         environment("JEV_MODEL_DIR", it)
-        inputs.property("jevModelDir", it)
+        inputs.property("heronModelDir", it)
         inputs.dir(it)
     }
     testLogging {

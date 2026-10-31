@@ -14,6 +14,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Jev"
+rootProject.name = "Heron"
 include(":core")
 include(":app")

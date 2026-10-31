@@ -28,7 +28,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: jev-debug-apk
+          name: heron-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -38,6 +38,8 @@ jobs:
   device-test:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@v5
@@ -53,7 +55,8 @@ jobs:
         run: |
           URL=https://github.com/${{ github.repository }}/releases/download/model-v1/manifest.json
           for i in $(seq 1 60); do
-            if curl -sfL "$URL" -o manifest.json; then cat manifest.json; exit 0; fi
+            # Wait for a manifest in the format this app version expects.
+            if curl -sfL "$URL" -o manifest.json && grep -q decision_config.json manifest.json; then cat manifest.json; exit 0; fi
             echo "model-v1 not published yet, waiting ($i)…"; sleep 20
           done
           echo "Model release never appeared"; exit 1
@@ -70,13 +73,32 @@ jobs:
           api-level: 35
           arch: x86_64
           target: google_apis
+          profile: pixel_7
           ram-size: 4096M
           disk-size: 6000M
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
-            ./gradlew :app:connectedDebugAndroidTest --stacktrace || (adb logcat -d -s JevTest:I JevModel:* JevListener:* AndroidRuntime:E; exit 1)
-            adb logcat -d -s JevTest:I
+            ./gradlew :app:connectedDebugAndroidTest --stacktrace > device-test.log 2>&1; echo $? > device-test.exit
+            adb pull /data/local/tmp/heron-shots shots || echo "no screenshots"
+            adb logcat -d -s HeronTest:I HeronModel:* HeronListener:* AndroidRuntime:E > device-logcat.txt || true
+
+      - name: Test results
+        if: always()
+        run: |
+          tail -n 60 device-test.log || true
+          grep -E "HeronTest|AndroidRuntime" device-logcat.txt | tail -n 120 || true
+          exit $(cat device-test.exit 2>/dev/null || echo 1)
+
+      - name: Publish screenshots to the ci-screenshots branch
+        if: always()
+        run: |
+          [ -d shots ] || exit 0
+          cd shots
+          git init -q -b ci-screenshots
+          git -c user.name="heron-ci" -c user.email="heron-ci@users.noreply.github.com" add -A
+          git -c user.name="heron-ci" -c user.email="heron-ci@users.noreply.github.com" commit -q -m "Screenshots for ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" ci-screenshots
 
       - uses: actions/upload-artifact@v4
         if: always()
