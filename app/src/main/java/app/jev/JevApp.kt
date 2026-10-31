@@ -2,6 +2,7 @@ package app.jev
 
 import android.app.Application
 import android.util.Log
+import androidx.work.ExistingWorkPolicy
 import app.jev.core.JevPipeline
 import app.jev.core.model.DecisionRouter
 import app.jev.data.AppDatabase
@@ -27,7 +28,8 @@ class JevApp : Application() {
     override fun onCreate() {
         super.onCreate()
         notifier.createChannels()
-        DigestScheduler.schedule(this, settings.value.digestTimes)
+        // KEEP: if WorkManager woke us to run the digest, don't cancel that run.
+        DigestScheduler.schedule(this, settings.value.digestTimes, ExistingWorkPolicy.KEEP)
         appScope.launch { models.loadIfPresent(settings.value.useModel) }
         appScope.launch {
             val cutoff = System.currentTimeMillis() - settings.value.keepDays * 86_400_000L

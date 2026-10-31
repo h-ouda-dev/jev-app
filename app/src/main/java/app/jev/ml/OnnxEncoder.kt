@@ -17,17 +17,17 @@ class OnnxEncoder(modelFile: File, private val tokenizer: ByteLevelBpeTokenizer)
     private val env = OrtEnvironment.getEnvironment()
     private val session: OrtSession
     private val inputNames: Set<String>
+    private val opts = OrtSession.SessionOptions()
 
     init {
-        val opts = OrtSession.SessionOptions().apply {
-            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
-            // The S25 Ultra's Snapdragon 8 Elite has 2 prime + 6 performance cores.
-            setIntraOpNumThreads(4)
-            try {
-                addXnnpack(mapOf("intra_op_num_threads" to "4"))
-            } catch (_: Throwable) {
-                // XNNPACK unavailable: default CPU provider is fine.
-            }
+        opts.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+        // The S25 Ultra's Snapdragon 8 Elite has 2 prime + 6 performance cores.
+        try {
+            opts.addXnnpack(mapOf("intra_op_num_threads" to "4"))
+            // XNNPACK brings its own thread pool; don't let ORT's pool compete with it.
+            opts.setIntraOpNumThreads(1)
+        } catch (_: Throwable) {
+            opts.setIntraOpNumThreads(4)
         }
         session = env.createSession(modelFile.absolutePath, opts)
         inputNames = session.inputNames
@@ -70,7 +70,10 @@ class OnnxEncoder(modelFile: File, private val tokenizer: ByteLevelBpeTokenizer)
         }
     }
 
+    // Synchronized with forward() so the native session is never freed mid-inference.
+    @Synchronized
     override fun close() {
         session.close()
+        opts.close()
     }
 }

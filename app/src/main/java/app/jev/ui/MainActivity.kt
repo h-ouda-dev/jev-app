@@ -53,7 +53,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         if (Build.VERSION.SDK_INT >= 33) notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        handleIntent(intent)
+        // Only on first creation, so a rotation doesn't re-run a shared check.
+        if (savedInstanceState == null) handleIntent(intent)
 
         setContent {
             JevTheme {
