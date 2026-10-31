@@ -13,6 +13,11 @@ on:
 permissions:
   contents: write
 
+# One release build at a time, so two pushes never race to publish.
+concurrency:
+  group: model-release
+  cancel-in-progress: false
+
 env:
   MODEL_TAG: model-v1
   SOURCE_MODEL: tasksource/ModernBERT-base-nli
@@ -33,24 +38,33 @@ jobs:
       - name: Install export tools
         run: pip install -r tools/requirements.txt
 
-      - name: Inspect ModernBERT-JEV (informational)
+      - name: Licence check and candidate models (informational)
         continue-on-error: true
         run: |
           python - <<'PY'
+          import re
           from huggingface_hub import hf_hub_download, list_repo_files
-          for repo in ("tasksource/modernbert-tasksource-jev", "tasksource/ModernBERT-JEV", "MaziyarPanahi/ModernJEV-Decide-Preview", "jevhome/jevhome-B"):
+          # The app is commercial (ads + paid tier): only permissive licences are usable.
+          for repo in ("tasksource/ModernBERT-base-nli", "answerdotai/ModernBERT-base",
+                       "MaziyarPanahi/ModernJEV-Decide-Preview", "jevhome/jevhome-B"):
               print(f"########## {repo}")
               try:
-                  print("files:", list_repo_files(repo))
+                  readme = open(hf_hub_download(repo, "README.md")).read()
               except Exception as e:
                   print("not accessible:", type(e).__name__)
                   continue
-              for f in ("config.json", "README.md"):
-                  try:
-                      print(f"===== {f} =====")
-                      print(open(hf_hub_download(repo, f)).read()[:5000])
-                  except Exception as e:
-                      print(f, "->", type(e).__name__)
+              front = readme.split("---")[1] if readme.startswith("---") else ""
+              lic = re.search(r"^license:\s*(.+)$", front, re.M)
+              print("LICENSE:", lic.group(1).strip() if lic else "not declared")
+              ds = re.search(r"^datasets:(.*?)(^\w|\Z)", front, re.M | re.S)
+              print("DATASETS:", ds.group(1).strip()[:800] if ds else "not declared")
+          repo = "MaziyarPanahi/ModernJEV-Decide-Preview"
+          for f in ("predict.py", "example-output.json", "results.json"):
+              try:
+                  print(f"===== {repo}/{f} =====")
+                  print(open(hf_hub_download(repo, f)).read()[:7000])
+              except Exception as e:
+                  print(f, "->", type(e).__name__)
           PY
 
       - name: Export ${{ env.SOURCE_MODEL }} to ONNX (int8)
