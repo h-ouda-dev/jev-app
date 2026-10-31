@@ -68,4 +68,9 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
 
     implementation(libs.onnxruntime.android)
+
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.core)
 }

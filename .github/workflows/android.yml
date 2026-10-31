@@ -31,3 +31,47 @@ jobs:
           name: jev-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+  # Installs the app on an Android 15 emulator, downloads the published model
+  # and runs the on-device tests (download/resume/checksum, ONNX on Android,
+  # self-test, live notification-listener pipeline).
+  device-test:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run on-device tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          ram-size: 4096M
+          disk-size: 6000M
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            ./gradlew :app:connectedDebugAndroidTest --stacktrace || (adb logcat -d -s JevTest:I JevModel:* JevListener:* AndroidRuntime:E; exit 1)
+            adb logcat -d -s JevTest:I
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: device-test-reports
+          path: app/build/reports/androidTests/
+          if-no-files-found: ignore
