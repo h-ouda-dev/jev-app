@@ -8,6 +8,7 @@ import app.heron.core.money.ParsedTransaction
 import app.heron.core.money.SpendingInsights
 import app.heron.core.money.TxPoint
 import app.heron.core.money.normalizeMerchant
+import app.heron.core.triage.TriageBucket
 import app.heron.core.triage.TriagePreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -99,9 +100,9 @@ object DemoData {
                     sbnKey = e.key, packageName = e.packageName, appLabel = e.appLabel, title = e.title, text = e.text,
                     sender = e.sender, senderKey = e.senderKey, postedAt = e.postedAt,
                     bucket = r.triage.bucket.name, confidence = r.triage.decision.confidence,
-                    probabilities = app.heron.core.triage.TriageBucket.entries.joinToString(";") { "${it.name}=${r.triage.decision.probabilityOf(it.choice)}" },
+                    probabilities = TriageBucket.entries.joinToString(";") { "${it.name}=${r.triage.decision.probabilityOf(it.choice)}" },
                     reason = r.triage.reason, decidedBy = r.triage.decision.source.name,
-                    inDigest = r.triage.bucket == app.heron.core.triage.TriageBucket.DIGEST,
+                    inDigest = r.triage.bucket == TriageBucket.DIGEST,
                     scamVerdict = r.scam?.verdict?.name, scamRisk = r.scam?.riskScore,
                     scamFlags = r.scam?.raisedFlags?.joinToString(",") { it.flag.name },
                     latencyMs = r.elapsedMs,

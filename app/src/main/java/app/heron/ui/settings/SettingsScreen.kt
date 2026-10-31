@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.dp
 import androidx.work.WorkInfo
 import app.heron.BuildConfig
 import app.heron.core.DiagnosticReport
+import app.heron.core.triage.TriageBucket
 import app.heron.ml.ModelDownloadWorker
 import app.heron.ml.ModelState
 import app.heron.ml.SelfTestState
@@ -165,7 +166,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, snackbar: SnackbarHost
                             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text(r.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(
-                                    app.heron.core.triage.TriageBucket.valueOf(r.bucket).label,
+                                    TriageBucket.valueOf(r.bucket).label,
                                     style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
                                 )
                                 IconButton(onClick = { vm.forgetRule(r) }) { Icon(Icons.Rounded.Close, "Forget", modifier = Modifier.size(18.dp)) }
