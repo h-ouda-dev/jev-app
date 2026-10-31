@@ -106,6 +106,8 @@ class ScamShield(private val router: DecisionRouter) {
     private fun rulesFor(flag: RedFlag, evidence: List<String>): Decision {
         val r = ScoredRules(YES_NO).add(NO, 1.5f)
         if (evidence.isNotEmpty()) r.add(YES, 1.2f + evidence.size.coerceAtMost(3) * 0.8f)
+        // Asking for a code or password is never innocent: an explicit request outweighs any model doubt.
+        if (evidence.isNotEmpty() && flag == RedFlag.CODE_OR_PASSWORD) r.add(YES, 3f)
         return r.toDecision()
     }
 

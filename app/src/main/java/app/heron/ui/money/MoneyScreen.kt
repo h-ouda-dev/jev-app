@@ -199,7 +199,7 @@ fun MoneyScreen(vm: MainViewModel, startImport: Boolean = false, onImportShown: 
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Meter((amt / spent).toFloat(), categoryColor(c), Modifier.weight(1f), height = 6.dp)
                                     Spacer(Modifier.width(10.dp))
-                                    Text("${(amt / spent * 100).toInt()}%", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text((amt / spent * 100).let { if (it > 0 && it < 1) "<1%" else "${it.toInt()}%" }, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             }
                         }
