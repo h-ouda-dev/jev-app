@@ -62,7 +62,7 @@ class ImportTest {
         assertEquals(Direction.CREDIT, r.rows[2].direction)
         assertEquals(12500.0, r.rows[2].amount, 1e-9)
         val txs = importer.fromStatement(r.rows, "test.csv")
-        assertEquals("Carrefour City Center Doha", txs[0].merchant)
+        assertEquals("Carrefour City Center", txs[0].merchant)
         val (imported, _) = importer.process(txs, emptyList(), emptyMap(), { false })
         assertEquals(BudgetCategory.SUBSCRIPTIONS, imported.first { it.tx.merchantKey == "netflix" }.category)
     }
@@ -137,5 +137,38 @@ class GccMerchantTest {
 
     @Test fun lulExchangeIsATransferNotGroceries() {
         check("Transaction of QAR 2,000.00 at LULU EXCHANGE on card ending 1234", "Lulu Exchange", app.heron.core.money.BudgetCategory.TRANSFERS)
+    }
+}
+
+class CardStatementTest {
+    @Test fun billedColumnsWinAndCardConventionIsDetected() {
+        val csv = """
+            Date,Description,Transaction Currency,Transaction Amount,Billed Amount,Billed Currency
+            30/10/2026,AMAZON.COM AMZN.COM/BILL,USD,25.00,91.00,QAR
+            29/10/2026,TALABAT DOHA QA,QAR,64.50,64.50,QAR
+            28/10/2026,PAYMENT - THANK YOU,QAR,-2500.00,-2500.00,QAR
+            27/10/2026,REFUND NOON.COM,QAR,-120.00,-120.00,QAR
+            26/10/2026,WOQOD STATION 12,QAR,150.00,150.00,QAR
+        """.trimIndent()
+        val r = app.heron.core.money.StatementCsv.parse(csv, "QAR")
+        assertEquals(4, r.rows.size) // card payment skipped
+        val amazon = r.rows[0]
+        assertEquals(91.0, amazon.amount, 1e-9)
+        assertEquals("QAR", amazon.currency)
+        assertEquals(app.heron.core.money.Direction.DEBIT, amazon.direction)
+        assertEquals(app.heron.core.money.Direction.CREDIT, r.rows.first { it.description.startsWith("REFUND") }.direction)
+        assertEquals(app.heron.core.money.Direction.DEBIT, r.rows.last().direction)
+    }
+
+    @Test fun bankAccountConventionStillWorks() {
+        val csv = """
+            Date,Description,Amount
+            30/10/2026,CARREFOUR,-245.50
+            29/10/2026,STARBUCKS,-38.00
+            25/10/2026,ACME TRADING,12500.00
+        """.trimIndent()
+        val r = app.heron.core.money.StatementCsv.parse(csv, "QAR")
+        assertEquals(app.heron.core.money.Direction.DEBIT, r.rows[0].direction)
+        assertEquals(app.heron.core.money.Direction.CREDIT, r.rows[2].direction)
     }
 }

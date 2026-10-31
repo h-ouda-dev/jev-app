@@ -38,7 +38,7 @@ class HistoryImporter(private val categorizer: Categorizer) {
             ParsedTransaction(
                 amount = r.amount,
                 currency = r.currency,
-                merchant = cleanDescription(r.description),
+                merchant = TransactionParser.cleanMerchant(cleanDescription(r.description)),
                 direction = r.direction,
                 cardHint = null,
                 sourcePackage = "statement:$sourceLabel",

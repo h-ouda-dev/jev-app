@@ -19,13 +19,14 @@ data class StatementParseResult(val rows: List<StatementRow>, val skipped: Int, 
  * columns, with an optional type (DR/CR) and currency column.
  */
 object StatementCsv {
-    private val DATE_HEADERS = listOf("transaction date", "posting date", "booking date", "value date", "date")
+    // Order = priority. Card statements bill in your currency: prefer the billed date/amount/currency.
+    private val DATE_HEADERS = listOf("billed date", "billing date", "bill date", "posting date", "post date", "transaction date", "booking date", "value date", "date")
     private val DESC_HEADERS = listOf("description", "transaction details", "details", "narration", "narrative", "merchant", "payee", "particulars", "memo", "reference", "name")
-    private val AMOUNT_HEADERS = listOf("amount", "transaction amount", "value", "amount (qar)", "amount (usd)")
+    private val AMOUNT_HEADERS = listOf("billed amount", "billing amount", "bill amount", "amount (qar)", "amount", "transaction amount", "value", "amount (usd)")
     private val DEBIT_HEADERS = listOf("debit", "withdrawal", "withdrawals", "money out", "paid out", "debit amount", "dr")
     private val CREDIT_HEADERS = listOf("credit", "deposit", "deposits", "money in", "paid in", "credit amount", "cr")
     private val TYPE_HEADERS = listOf("type", "transaction type", "dr/cr", "debit/credit", "cr/dr")
-    private val CURRENCY_HEADERS = listOf("currency", "ccy", "curr")
+    private val CURRENCY_HEADERS = listOf("billed currency", "billing currency", "bill currency", "currency", "ccy", "curr", "transaction currency")
 
     private val DATE_PATTERNS = listOf(
         "yyyy-MM-dd", "yyyy/MM/dd", "dd/MM/yyyy", "d/M/yyyy", "dd-MM-yyyy", "dd.MM.yyyy", "MM/dd/yyyy", "M/d/yyyy",
@@ -56,6 +57,10 @@ object StatementCsv {
         require(amountCol != null || debitCol != null || creditCol != null) { "No amount column" }
 
         val dataRows = table.drop(headerIndex + 1)
+        // Bank accounts write spending as negative; card statements write it as positive and payments as
+        // negative. Most rows are spending either way, so the majority sign tells us which convention this is.
+        val signs = amountCol?.let { c -> dataRows.mapNotNull { r -> r.getOrNull(c)?.let(::parseAmount)?.takeIf { it != 0.0 } } }.orEmpty()
+        val spendingIsNegative = signs.count { it < 0 } > signs.count { it > 0 }
         val dateFormat = pickDateFormat(dataRows.mapNotNull { it.getOrNull(dateCol) })
         val out = mutableListOf<StatementRow>()
         var skipped = 0
@@ -63,6 +68,8 @@ object StatementCsv {
             val date = row.getOrNull(dateCol)?.let { parseDate(it, dateFormat) }
             val desc = descCol?.let { row.getOrNull(it) }?.trim().orEmpty()
             if (date == null || desc.isBlank()) { skipped++; continue }
+            // Paying off the card isn't income or spending: the purchases are already listed.
+            if (CARD_PAYMENT.containsMatchIn(desc)) { skipped++; continue }
             val currency = currencyCol?.let { row.getOrNull(it) }?.trim()?.uppercase()?.takeIf { it.length == 3 } ?: defaultCurrency
             val type = typeCol?.let { row.getOrNull(it) }?.norm()
             val debit = debitCol?.let { row.getOrNull(it) }?.let(::parseAmount)
@@ -75,10 +82,9 @@ object StatementCsv {
                     val dir = when {
                         type != null && (type.startsWith("cr") || type.startsWith("credit") || type.startsWith("deposit")) -> Direction.CREDIT
                         type != null && (type.startsWith("dr") || type.startsWith("debit") || type.startsWith("with")) -> Direction.DEBIT
-                        amount < 0 -> Direction.DEBIT
                         CREDIT_WORDS.any { desc.lowercase().contains(it) } -> Direction.CREDIT
-                        // Statements that sign their amounts use '-' for money out; all-positive files list spending.
-                        else -> if (signedAmounts(dataRows, amountCol)) Direction.CREDIT else Direction.DEBIT
+                        (amount < 0) == spendingIsNegative -> Direction.DEBIT
+                        else -> Direction.CREDIT
                     }
                     kotlin.math.abs(amount) to dir
                 }
@@ -91,11 +97,7 @@ object StatementCsv {
     }
 
     private val CREDIT_WORDS = listOf("salary", "refund", "deposit", "transfer from", "credit interest", "reversal")
-
-    private fun signedAmounts(rows: List<List<String>>, col: Int?): Boolean {
-        col ?: return false
-        return rows.any { it.getOrNull(col)?.let { v -> parseAmount(v)?.let { a -> a < 0 } } == true }
-    }
+    private val CARD_PAYMENT = Regex("""(?i)(payment\s*[-–]?\s*thank\s*you|thank\s*you\s*for\s*your\s*payment|payment\s+received|autopay|card\s+payment|cc\s+payment|credit\s+card\s+payment)""")
 
     fun parseAmount(raw: String): Double? {
         var s = raw.trim()
