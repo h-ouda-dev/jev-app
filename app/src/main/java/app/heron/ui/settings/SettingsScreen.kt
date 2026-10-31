@@ -97,6 +97,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, snackbar: SnackbarHost
     var budgetText by remember(s.monthlyBudget) { mutableStateOf(if (s.monthlyBudget > 0) "%.0f".format(s.monthlyBudget) else "") }
     var currencyText by remember(s.currency) { mutableStateOf(s.currency) }
     var showLicences by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf<String?>(null) }
+    val importedCount by vm.importedCount.collectAsState()
+    val transactionCount by vm.transactionCount.collectAsState()
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) vm.importModel(uris)
     }
@@ -215,6 +218,17 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, snackbar: SnackbarHost
                         onClick = { vm.updateSettings { it.copy(monthlyBudget = budgetText.toDoubleOrNull() ?: 0.0, currency = currencyText.ifBlank { "QAR" }) } },
                         shape = CircleShape,
                     ) { Text("Save budget") }
+                    Divider()
+                    Label("Money history")
+                    Text(
+                        "$transactionCount transactions · $importedCount imported from text messages or statements.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { confirmDelete = "imported" }, enabled = importedCount > 0, shape = CircleShape) { Text("Delete imported") }
+                        TextButton(onClick = { confirmDelete = "all" }, enabled = transactionCount > 0) { Text("Delete all", color = Heron.colors.danger) }
+                    }
                 }
             }
 
@@ -250,6 +264,26 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, snackbar: SnackbarHost
                 }
             }
         }
+    }
+
+    confirmDelete?.let { which ->
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            title = { Text(if (which == "all") "Delete all money history?" else "Delete imported transactions?") },
+            text = {
+                Text(
+                    if (which == "all") "All $transactionCount transactions are removed from this phone. Your category choices are kept."
+                    else "The $importedCount transactions imported from text messages and statements are removed. Ones Heron saw live from notifications stay. You can import again any time.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (which == "all") vm.deleteAllTransactions() else vm.deleteImportedTransactions()
+                    confirmDelete = null
+                }) { Text("Delete", color = Heron.colors.danger) }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancel") } },
+        )
     }
 
     if (showLicences) {

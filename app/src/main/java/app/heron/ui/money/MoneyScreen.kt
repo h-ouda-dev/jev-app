@@ -21,12 +21,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Autorenew
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -317,18 +320,40 @@ private fun TransactionRow(t: TransactionRecord, home: String, onClick: () -> Un
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun CategorySheet(t: TransactionRecord, onDismiss: () -> Unit, onPick: (BudgetCategory) -> Unit, onDelete: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Column(Modifier.padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 16.dp)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 16.dp)) {
             Text(t.merchant, style = MaterialTheme.typography.headlineSmall)
             Text("${money(t.amount, t.currency)} · ${dayLabel(t.timestamp)} ${timeOf(t.timestamp)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (t.anomalies.isNotBlank()) {
                 Spacer(Modifier.height(12.dp))
                 Tag(t.anomalies.lines().first(), Heron.colors.caution, icon = Icons.Rounded.Warning)
             }
-            Spacer(Modifier.height(14.dp))
-            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                Text(t.rawText, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().padding(14.dp), maxLines = 4, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(16.dp))
+            // The original message, in full, so you can check what Heron read.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    sourceLabel(context, t.sourcePackage).uppercase(),
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                TextButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(t.rawText)) }) {
+                    Icon(Icons.Rounded.ContentCopy, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Copy")
+                }
             }
+            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(t.rawText, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.fillMaxWidth().padding(16.dp))
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "${dayLabel(t.timestamp)} at ${timeOf(t.timestamp)}" + (t.cardHint?.let { " · card ••$it" } ?: ""),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Spacer(Modifier.height(20.dp))
             Text("CATEGORY FOR ALL ${t.merchant.uppercase()} PAYMENTS", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(10.dp))
@@ -365,6 +390,17 @@ private fun fxNote(currencies: List<String>, home: String, unknown: Int): String
     }
     val base = if (parts.isEmpty()) "" else "Converted to $home: " + parts.joinToString(" · ") + "."
     return if (unknown > 0) "$base $unknown in other currencies not included.".trim() else base
+}
+
+/** Where a transaction came from, in words. */
+private fun sourceLabel(context: android.content.Context, source: String): String = when {
+    source.startsWith("sms-sender:") -> "Text message from ${source.removePrefix("sms-sender:")}"
+    source.startsWith("sms:") -> "Text message from ${source.removePrefix("sms:")}"
+    source.startsWith("statement:") -> "Statement · ${source.removePrefix("statement:")}"
+    else -> "Notification from " + runCatching {
+        @Suppress("DEPRECATION")
+        context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(source, 0)).toString()
+    }.getOrDefault(source)
 }
 
 private fun shortDate(ms: Long): String =

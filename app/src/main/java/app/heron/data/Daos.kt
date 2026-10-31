@@ -68,6 +68,16 @@ interface TransactionDao {
 
     @Query("DELETE FROM transactions")
     suspend fun clear()
+
+    /** Imported = from SMS history or a CSV statement (not seen live as a notification). */
+    @Query("DELETE FROM transactions WHERE sourcePackage LIKE 'sms:%' OR sourcePackage LIKE 'sms-sender:%' OR sourcePackage LIKE 'statement:%'")
+    suspend fun deleteImported(): Int
+
+    @Query("SELECT COUNT(*) FROM transactions WHERE sourcePackage LIKE 'sms:%' OR sourcePackage LIKE 'sms-sender:%' OR sourcePackage LIKE 'statement:%'")
+    fun importedCount(): Flow<Int>
+
+    @Query("SELECT COUNT(*) FROM transactions")
+    fun count(): Flow<Int>
 }
 
 @Dao

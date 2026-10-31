@@ -1,6 +1,8 @@
 package app.heron.ui.inbox
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -24,7 +26,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.GppBad
+import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Inbox
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -136,7 +140,7 @@ fun InboxScreen(vm: MainViewModel, openShield: (String) -> Unit) {
                 HeronCard(Modifier.padding(horizontal = 16.dp), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp)) {
                     rows.forEachIndexed { i, r ->
                         if (i > 0) HorizontalDivider(Modifier.padding(start = 58.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-                        NotificationRow(r) { selected = r }
+                        NotificationRow(r, onOpen = { vm.openInApp(context, r) }, onDetails = { selected = r })
                     }
                 }
             }
@@ -149,6 +153,7 @@ fun InboxScreen(vm: MainViewModel, openShield: (String) -> Unit) {
             onDismiss = { selected = null },
             onTeach = { vm.teach(r, it); selected = null },
             onCheckScam = { openShield(r.text); selected = null },
+            onOpen = { vm.openInApp(context, r); selected = null },
         )
     }
 }
@@ -178,11 +183,13 @@ private fun FilterPill(label: String, count: Int, bucket: TriageBucket?, selecte
     }
 }
 
+/** Tap opens the notification in its app (like the shade); long-press or ⓘ shows Heron's reasoning. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun NotificationRow(r: NotificationRecord, onClick: () -> Unit) {
+private fun NotificationRow(r: NotificationRecord, onOpen: () -> Unit, onDetails: () -> Unit) {
     val bucket = TriageBucket.valueOf(r.bucket)
     val verdict = r.scamVerdict?.let { ScamVerdict.valueOf(it) }?.takeIf { it != ScamVerdict.SAFE }
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 13.dp), verticalAlignment = Alignment.Top) {
+    Row(Modifier.fillMaxWidth().combinedClickable(onClick = onOpen, onLongClick = onDetails).padding(vertical = 13.dp), verticalAlignment = Alignment.Top) {
         AppIcon(r.packageName, r.sender ?: r.appLabel, size = 44.dp, fallbackColor = bucketColor(bucket))
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
@@ -201,7 +208,16 @@ private fun NotificationRow(r: NotificationRecord, onClick: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Tag(bucket.label, bucketColor(bucket), icon = bucket.icon())
                 if (verdict != null) Tag(verdict.label, verdictColor(verdict), icon = Icons.Rounded.GppBad)
-                Text(r.appLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+                Text(
+                    r.appLabel, style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f), modifier = Modifier.weight(1f),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Icon(
+                    Icons.Rounded.Info, contentDescription = "Why Heron chose this",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.size(32.dp).clip(CircleShape).clickable(onClick = onDetails).padding(7.dp),
+                )
             }
         }
     }
@@ -209,7 +225,7 @@ private fun NotificationRow(r: NotificationRecord, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DecisionSheet(r: NotificationRecord, onDismiss: () -> Unit, onTeach: (TriageBucket) -> Unit, onCheckScam: () -> Unit) {
+private fun DecisionSheet(r: NotificationRecord, onDismiss: () -> Unit, onTeach: (TriageBucket) -> Unit, onCheckScam: () -> Unit, onOpen: () -> Unit) {
     val bucket = TriageBucket.valueOf(r.bucket)
     val probs = r.probabilities.split(';').mapNotNull { part ->
         val (k, v) = part.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
@@ -229,6 +245,12 @@ private fun DecisionSheet(r: NotificationRecord, onDismiss: () -> Unit, onTeach:
             Spacer(Modifier.height(16.dp))
             Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Text(r.text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.fillMaxWidth().padding(16.dp))
+            }
+            Spacer(Modifier.height(12.dp))
+            androidx.compose.material3.Button(onClick = onOpen, shape = CircleShape, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+                Icon(Icons.AutoMirrored.Rounded.OpenInNew, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Open in ${r.appLabel}")
             }
             if (verdict != null && verdict != ScamVerdict.SAFE) {
                 Spacer(Modifier.height(12.dp))

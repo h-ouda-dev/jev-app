@@ -42,12 +42,19 @@ class HeronNotificationListener : NotificationListenerService() {
      * When Heron (re)connects, bank alerts already sitting in the shade are
      * added to Money, so nothing posted while it was off is lost.
      */
+    override fun onListenerDisconnected() {
+        NotificationActions.attach(null)
+        super.onListenerDisconnected()
+    }
+
     override fun onListenerConnected() {
         super.onListenerConnected()
+        NotificationActions.attach(this)
         val active = try { activeNotifications } catch (_: Exception) { null } ?: return
         scope.launch {
             for (sbn in active) {
                 val event = toEvent(sbn) ?: continue
+                NotificationActions.remember(sbn.key, sbn.notification.contentIntent)
                 try {
                     val result = heron.pipeline.process(event, TriagePreferences())
                     if (result.transaction != null) saveTransaction(result, alerts = false)
@@ -60,6 +67,7 @@ class HeronNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val event = toEvent(sbn) ?: return
+        NotificationActions.remember(sbn.key, sbn.notification.contentIntent)
         // Apps re-post the same notification constantly (progress, edits); only handle real changes.
         val fingerprint = "${sbn.key}|${event.title}|${event.text}"
         synchronized(recent) {

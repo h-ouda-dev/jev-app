@@ -71,6 +71,8 @@ fun ImportSheet(vm: MainViewModel, onDismiss: () -> Unit) {
         if (uri != null) vm.importCsv(uri)
     }
     val running = state is ImportState.Running
+    val importedCount by vm.importedCount.collectAsState()
+    var confirmDelete by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = { if (!running) { vm.resetImport(); onDismiss() } },
@@ -170,10 +172,28 @@ fun ImportSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                             shape = CircleShape, modifier = Modifier.fillMaxWidth().height(50.dp),
                         ) { Text("Choose file") }
                     }
+                    if (importedCount > 0) {
+                        Spacer(Modifier.height(8.dp))
+                        androidx.compose.material3.TextButton(onClick = { confirmDelete = true }) {
+                            Text("Delete $importedCount imported transactions", color = Heron.colors.danger)
+                        }
+                    }
                 }
             }
         }
     }
+    if (confirmDelete) ConfirmDeleteImported(importedCount, onConfirm = { vm.deleteImportedTransactions(); confirmDelete = false }, onDismiss = { confirmDelete = false })
+}
+
+@Composable
+private fun ConfirmDeleteImported(count: Int, onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete imported transactions?") },
+        text = { Text("The $count transactions imported from text messages and statements are removed. Ones Heron saw live stay. You can import again any time.") },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onConfirm) { Text("Delete", color = Heron.colors.danger) } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

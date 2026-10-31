@@ -224,7 +224,7 @@ fun TodayScreen(vm: MainViewModel, openTab: (Tab) -> Unit, openSettings: () -> U
                             subtitle = r.text,
                             leading = { AppIcon(r.packageName, r.sender ?: r.appLabel, fallbackColor = bucketColor(TriageBucket.URGENT)) },
                             trailing = { Text(relativeTime(r.postedAt), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                            onClick = { openTab(Tab.INBOX) },
+                            onClick = { vm.openInApp(context, r) },
                             subtitleMaxLines = 1,
                         )
                     }

@@ -20,7 +20,9 @@ import app.heron.data.SenderRule
 import app.heron.data.TransactionRecord
 import app.heron.heron
 import app.heron.ml.ModelState
+import app.heron.service.NotificationActions
 import app.heron.service.toPoint
+import android.content.Context
 import app.heron.work.DigestScheduler
 import android.Manifest
 import android.app.Notification
@@ -66,6 +68,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun consumeMessage() { _message.value = null }
 
     fun completeOnboarding() = updateSettings { it.copy(onboarded = true) }
+
+    /** Opens a notification in the app that posted it (the exact chat/item when possible). */
+    fun openInApp(context: Context, r: NotificationRecord) {
+        when (NotificationActions.open(context, r.packageName, r.sbnKey)) {
+            NotificationActions.Result.NOT_INSTALLED -> _message.value = "${r.appLabel} isn't installed on this phone"
+            else -> Unit
+        }
+    }
 
     // ---- History import (Money) ----
     private val _import = MutableStateFlow<ImportState>(ImportState.Idle)
@@ -129,6 +139,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         db.rules().upsertMerchant(MerchantRule(tx.merchantKey, category.name))
         db.transactions().recategorize(tx.merchantKey, category.name)
         _message.value = "${tx.merchant} is now ${category.label}"
+    }
+
+    val importedCount = db.transactions().importedCount().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+    val transactionCount = db.transactions().count().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    fun deleteImportedTransactions() = viewModelScope.launch {
+        val n = db.transactions().deleteImported()
+        _message.value = "Deleted $n imported transactions"
+    }
+
+    fun deleteAllTransactions() = viewModelScope.launch {
+        db.transactions().clear()
+        _message.value = "Money history deleted"
     }
 
     fun deleteTransaction(tx: TransactionRecord) = viewModelScope.launch { db.transactions().delete(tx.id) }
