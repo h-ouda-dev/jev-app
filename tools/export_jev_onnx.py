@@ -161,7 +161,10 @@ def main():
         shutil.copy(fp32, final)
     else:
         from onnxruntime.quantization import QuantType, quantize_dynamic
-        quantize_dynamic(fp32, final, weight_type=QuantType.QInt8)
+        # Per-channel weights keep accuracy much closer to fp32. Activations are
+        # quantised dynamically per tensor, so the app scores one pair per run
+        # (padding other rows into a batch would shift the scales).
+        quantize_dynamic(fp32, final, weight_type=QuantType.QInt8, per_channel=True)
     consistency_report(tok, model, fp32, final)
     os.remove(fp32)
 

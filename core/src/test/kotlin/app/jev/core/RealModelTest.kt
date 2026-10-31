@@ -46,21 +46,15 @@ class RealModelTest {
             if (::session.isInitialized) session.close()
         }
 
-        fun forward(pairs: List<Pair<String, String>>, maxLength: Int): Array<FloatArray> {
-            val enc = pairs.map { tokenizer.encodePair(it.first, it.second, maxLength) }
-            val seq = enc.maxOf { it.length }
-            val ids = LongArray(enc.size * seq)
-            val mask = LongArray(enc.size * seq)
-            enc.forEachIndexed { r, e ->
-                System.arraycopy(e.ids, 0, ids, r * seq, e.length)
-                System.arraycopy(e.attentionMask, 0, mask, r * seq, e.length)
-            }
-            val shape = longArrayOf(enc.size.toLong(), seq.toLong())
-            OnnxTensor.createTensor(env, LongBuffer.wrap(ids), shape).use { i ->
-                OnnxTensor.createTensor(env, LongBuffer.wrap(mask), shape).use { m ->
-                    session.run(mapOf("input_ids" to i, "attention_mask" to m)).use { res ->
+        /** Same as the app's OnnxEncoder: one pair per run (see the comment there). */
+        fun forward(pairs: List<Pair<String, String>>, maxLength: Int): Array<FloatArray> = Array(pairs.size) { i ->
+            val e = tokenizer.encodePair(pairs[i].first, pairs[i].second, maxLength)
+            val shape = longArrayOf(1, e.length.toLong())
+            OnnxTensor.createTensor(env, LongBuffer.wrap(e.ids), shape).use { ids ->
+                OnnxTensor.createTensor(env, LongBuffer.wrap(e.attentionMask), shape).use { mask ->
+                    session.run(mapOf("input_ids" to ids, "attention_mask" to mask)).use { res ->
                         @Suppress("UNCHECKED_CAST")
-                        return (res.get(0).value as Array<FloatArray>)
+                        (res.get(0).value as Array<FloatArray>)[0].copyOf()
                     }
                 }
             }
@@ -86,25 +80,13 @@ class RealModelTest {
 
     @Test fun logitsMatchPythonOnnxRuntime() {
         requireModel()
-        referenceCases().forEachIndexed { i, c ->
-            val got = forward(listOf(c["a"] as String to c["b"] as String), 512)[0]
+        val cases = referenceCases()
+        val all = forward(cases.map { it["a"] as String to it["b"] as String }, 512)
+        cases.forEachIndexed { i, c ->
+            val got = all[i]
             val expected = c["logits"].asList()!!.map { (it as Number).toFloat() }
             expected.forEachIndexed { j, v -> assertEquals("logit[$i][$j]", v, got[j], 0.02f) }
         }
-    }
-
-    /** The app scores all choices in one padded batch; padding must not change the result. */
-    @Test fun batchingDoesNotChangeLogits() {
-        requireModel()
-        val pairs = referenceCases().map { it["a"] as String to it["b"] as String }
-        val batched = forward(pairs, 512)
-        var maxDiff = 0f
-        pairs.forEachIndexed { i, p ->
-            val single = forward(listOf(p), 512)[0]
-            single.indices.forEach { j -> maxDiff = maxOf(maxDiff, kotlin.math.abs(single[j] - batched[i][j])) }
-        }
-        println("Batched vs single max |diff| = $maxDiff")
-        assertTrue("Padding changes logits by $maxDiff", maxDiff < 0.05f)
     }
 
     @Test fun diagnosticsPassWithRealModel() {

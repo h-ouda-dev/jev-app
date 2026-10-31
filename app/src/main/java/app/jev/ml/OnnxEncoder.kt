@@ -36,32 +36,29 @@ class OnnxEncoder(modelFile: File, private val tokenizer: ByteLevelBpeTokenizer)
 
     val description: String get() = "inputs=${inputNames.joinToString()} outputs=${session.outputNames.joinToString()}"
 
+    /**
+     * Scores each pair in its own run. The int8 model quantises activations
+     * dynamically per tensor, so padding several pairs into one batch would
+     * change their results; single runs are exact and still ~15-30 ms each.
+     */
     @Synchronized
-    fun forward(pairs: List<Pair<String, String>>, maxLength: Int): Array<FloatArray> {
-        val encodings = pairs.map { (a, b) -> tokenizer.encodePair(a, b, maxLength) }
-        val batch = encodings.size
-        val seq = encodings.maxOf { it.length }
-        val ids = LongArray(batch * seq)
-        val mask = LongArray(batch * seq)
-        val types = LongArray(batch * seq)
-        encodings.forEachIndexed { row, e ->
-            // ModernBERT's pad id is ignored thanks to the attention mask, so 0 is safe.
-            System.arraycopy(e.ids, 0, ids, row * seq, e.length)
-            System.arraycopy(e.attentionMask, 0, mask, row * seq, e.length)
-            System.arraycopy(e.typeIds, 0, types, row * seq, e.length)
-        }
-        val shape = longArrayOf(batch.toLong(), seq.toLong())
+    fun forward(pairs: List<Pair<String, String>>, maxLength: Int): Array<FloatArray> =
+        Array(pairs.size) { i -> runOne(pairs[i].first, pairs[i].second, maxLength) }
+
+    private fun runOne(a: String, b: String, maxLength: Int): FloatArray {
+        val e = tokenizer.encodePair(a, b, maxLength)
+        val shape = longArrayOf(1, e.length.toLong())
         val tensors = buildMap {
-            put("input_ids", OnnxTensor.createTensor(env, LongBuffer.wrap(ids), shape))
-            if ("attention_mask" in inputNames) put("attention_mask", OnnxTensor.createTensor(env, LongBuffer.wrap(mask), shape))
-            if ("token_type_ids" in inputNames) put("token_type_ids", OnnxTensor.createTensor(env, LongBuffer.wrap(types), shape))
+            put("input_ids", OnnxTensor.createTensor(env, LongBuffer.wrap(e.ids), shape))
+            if ("attention_mask" in inputNames) put("attention_mask", OnnxTensor.createTensor(env, LongBuffer.wrap(e.attentionMask), shape))
+            if ("token_type_ids" in inputNames) put("token_type_ids", OnnxTensor.createTensor(env, LongBuffer.wrap(e.typeIds), shape))
         }
         try {
             session.run(tensors).use { result ->
                 @Suppress("UNCHECKED_CAST")
                 return when (val v = result.get(0).value) {
-                    is Array<*> -> (v as Array<FloatArray>).map { it.copyOf() }.toTypedArray()
-                    is FloatArray -> Array(batch) { floatArrayOf(v[it]) }
+                    is Array<*> -> (v as Array<FloatArray>)[0].copyOf()
+                    is FloatArray -> floatArrayOf(v[0])
                     else -> error("Unexpected model output type ${v?.javaClass}")
                 }
             }
