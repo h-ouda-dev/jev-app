@@ -38,14 +38,19 @@ jobs:
         run: |
           python - <<'PY'
           from huggingface_hub import hf_hub_download, list_repo_files
-          repo = "tasksource/modernbert-tasksource-jev"
-          print("files:", list_repo_files(repo))
-          for f in ("config.json", "README.md"):
+          for repo in ("tasksource/modernbert-tasksource-jev", "tasksource/ModernBERT-JEV", "MaziyarPanahi/ModernJEV-Decide-Preview", "jevhome/jevhome-B"):
+              print(f"########## {repo}")
               try:
-                  print(f"===== {f} =====")
-                  print(open(hf_hub_download(repo, f)).read()[:6000])
+                  print("files:", list_repo_files(repo))
               except Exception as e:
-                  print(f, "->", e)
+                  print("not accessible:", type(e).__name__)
+                  continue
+              for f in ("config.json", "README.md"):
+                  try:
+                      print(f"===== {f} =====")
+                      print(open(hf_hub_download(repo, f)).read()[:5000])
+                  except Exception as e:
+                      print(f, "->", type(e).__name__)
           PY
 
       - name: Export ${{ env.SOURCE_MODEL }} to ONNX (int8)

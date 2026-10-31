@@ -36,7 +36,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.work.WorkInfo
 import app.jev.core.scam.ScamVerdict
+import app.jev.ml.ModelState
 import app.jev.core.triage.TriageBucket
 import app.jev.data.NotificationRecord
 import app.jev.ui.MainViewModel
@@ -48,6 +50,8 @@ fun InboxScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val all by vm.notifications.collectAsState()
     val settings by vm.settings.collectAsState()
+    val model by vm.modelState.collectAsState()
+    val download by vm.modelDownload.collectAsState()
     var hasAccess by remember { mutableStateOf(vm.hasNotificationAccess()) }
     LifecycleResumeEffect(Unit) {
         hasAccess = vm.hasNotificationAccess()
@@ -69,7 +73,7 @@ fun InboxScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
             item {
                 InfoCard(
                     "Give Jev notification access",
-                    "Jev reads notifications on this phone to sort them, catch scams and track spending. Nothing leaves the device: the app has no internet permission.",
+                    "Jev reads notifications on this phone to sort them, catch scams and track spending. They are processed only on the device and never uploaded.",
                 ) {
                     Button(onClick = { ctx.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }) { Text("Open settings") }
                 }
@@ -80,6 +84,16 @@ fun InboxScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
                     "Shadow mode",
                     "Jev is labelling notifications but not hiding any. Tap an item to correct it. Turn on \"Hide digest & silenced\" in Settings once you trust it.",
                 )
+            }
+        }
+        if (model is ModelState.NotInstalled && download?.state != WorkInfo.State.RUNNING && download?.state != WorkInfo.State.ENQUEUED) {
+            item {
+                InfoCard(
+                    "Get the on-device model",
+                    "Jev works now with built-in rules. Download the ModernBERT decision model (about 150 MB, on Wi-Fi) for smarter decisions. It runs fully offline afterwards and Jev tests it automatically.",
+                ) {
+                    Button(onClick = { vm.downloadModel(wifiOnly = true) }) { Text("Download model") }
+                }
             }
         }
         item {

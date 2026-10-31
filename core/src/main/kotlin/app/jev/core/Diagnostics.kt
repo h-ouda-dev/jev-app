@@ -3,8 +3,11 @@ package app.jev.core
 import app.jev.core.model.Decision
 import app.jev.core.model.DecisionModel
 import app.jev.core.model.DecisionRequest
+import app.jev.core.model.Ensemble
 import app.jev.core.model.NotificationEvent
 import app.jev.core.money.BudgetCategory
+import app.jev.core.money.Categorizer
+import app.jev.core.triage.TriageEngine
 import app.jev.core.money.TransactionParser
 import app.jev.core.scam.RedFlag
 import app.jev.core.scam.ScamShield
@@ -17,17 +20,23 @@ data class DiagnosticCase(
     val name: String,
     val request: DecisionRequest,
     val accepted: Set<String>,
+    /** Same blend the feature uses in the app (0 = model only). */
+    val rulesWeight: Float,
     val rules: (DecisionRequest) -> Decision,
 )
 
 data class CaseResult(
     val case: DiagnosticCase,
+    /** What the app actually uses (model blended with rules where the feature does that). */
     val decision: Decision?,
+    /** The raw model answer, for judging the model itself. */
+    val modelDecision: Decision?,
     val error: String?,
     val millis: Long,
     val rulesDecision: Decision,
 ) {
     val passed: Boolean get() = decision != null && decision.choice in case.accepted
+    val modelPassed: Boolean get() = modelDecision != null && modelDecision.choice in case.accepted
     val rulesPassed: Boolean get() = rulesDecision.choice in case.accepted
 }
 
@@ -35,13 +44,14 @@ data class DiagnosticReport(val results: List<CaseResult>) {
     val passed: Int get() = results.count { it.passed }
     val total: Int get() = results.size
     val accuracy: Float get() = if (total == 0) 0f else passed.toFloat() / total
+    val modelOnlyAccuracy: Float get() = if (total == 0) 0f else results.count { it.modelPassed }.toFloat() / total
     val rulesAccuracy: Float get() = if (total == 0) 0f else results.count { it.rulesPassed }.toFloat() / total
     val errors: Int get() = results.count { it.error != null }
     val medianMillis: Long get() = results.map { it.millis }.sorted().let { if (it.isEmpty()) 0 else it[it.size / 2] }
 
     /** Sanity checks every model must satisfy, independent of how smart it is. */
     val wellFormed: Boolean get() = results.all { r ->
-        val d = r.decision ?: return@all false
+        val d = r.modelDecision ?: return@all false
         d.choice in r.case.request.choices &&
             d.probabilities.keys == r.case.request.choices.toSet() &&
             abs(d.probabilities.values.sum() - 1f) < 1e-3f &&
@@ -65,13 +75,15 @@ object Diagnostics {
         val results = cases.mapIndexed { i, c ->
             onProgress(i, cases.size)
             val t0 = System.nanoTime()
-            val (decision, error) = try {
+            val (raw, error) = try {
                 model.decide(c.request) to null
             } catch (t: Throwable) {
                 null to (t.message ?: t.javaClass.simpleName)
             }
             val ms = (System.nanoTime() - t0) / 1_000_000
-            CaseResult(c, decision, error, ms, c.rules(c.request))
+            val rules = c.rules(c.request)
+            val used = raw?.let { if (c.rulesWeight > 0f) Ensemble.combine(it, rules, c.rulesWeight) else it }
+            CaseResult(c, used, raw, error, ms, rules)
         }
         onProgress(cases.size, cases.size)
         return DiagnosticReport(results)
@@ -82,7 +94,7 @@ object Diagnostics {
 
         fun triage(name: String, app: String, pkg: String, title: String, text: String, category: String?, vararg ok: TriageBucket, sender: String? = null) {
             val e = NotificationEvent("diag", pkg, app, title, text, category, 1_730_000_000_000, sender)
-            out += DiagnosticCase("Triage", name, pipeline.triage.request(e, false), ok.map { it.choice }.toSet()) { pipeline.triage.rules(e, false) }
+            out += DiagnosticCase("Triage", name, pipeline.triage.request(e, false), ok.map { it.choice }.toSet(), TriageEngine.RULES_WEIGHT) { pipeline.triage.rules(e, false) }
         }
         triage("Family emergency", "WhatsApp", "com.whatsapp", "Mom", "Call me as soon as you can, your father is in the hospital", "msg", TriageBucket.URGENT, sender = "Mom")
         triage("Meeting starting", "Calendar", "com.google.android.calendar", "Board meeting", "Starts in 5 minutes in room 4B", "event", TriageBucket.URGENT)
@@ -99,7 +111,7 @@ object Diagnostics {
                     Decision.fromLogits(r.choices, floatArrayOf(c.probability, 1 - c.probability), app.jev.core.model.DecisionSource.RULES, 0.25f)
                 }
             }
-            out += DiagnosticCase("Scam shield", name, req, setOf(if (yes) ScamShield.YES else ScamShield.NO), evidenceRules)
+            out += DiagnosticCase("Scam shield", name, req, setOf(if (yes) ScamShield.YES else ScamShield.NO), 0f, evidenceRules)
         }
         val parcel = "DHL: Your parcel is on hold. Pay the customs fee of QAR 9.50 within 24 hours or it will be returned: dhl-parcel-fee.xyz/pay"
         val hiMum = "Hi mum, I lost my phone and this is my new number. Please send me the 6-digit code you just received, it's urgent"
@@ -120,7 +132,7 @@ object Diagnostics {
         fun money(name: String, text: String, vararg ok: BudgetCategory) {
             val tx = TransactionParser.parse(text, "com.qnb.mobile", 0) ?: error("Diagnostic transaction did not parse: $text")
             val req = pipeline.categorizer.request(tx)
-            out += DiagnosticCase("Money", name, req, ok.map { it.choice }.toSet()) { pipeline.categorizer.rules(tx, it.choices) }
+            out += DiagnosticCase("Money", name, req, ok.map { it.choice }.toSet(), Categorizer.RULES_WEIGHT) { pipeline.categorizer.rules(tx, it.choices) }
         }
         money("Coffee", "Purchase of QAR 24.00 at STARBUCKS VILLAGGIO with card ending 1234", BudgetCategory.DINING)
         money("Supermarket", "Purchase of QAR 312.75 at CARREFOUR HYPERMARKET with card ending 1234", BudgetCategory.GROCERIES)

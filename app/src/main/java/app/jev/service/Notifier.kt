@@ -31,6 +31,12 @@ class Notifier(private val context: Context) {
                 NotificationChannel(CH_MONEY, "Spending flags", NotificationManager.IMPORTANCE_DEFAULT).apply {
                     description = "Unusual charges, duplicates and subscription price changes"
                 },
+                NotificationChannel(CH_MODEL, "Model download", NotificationManager.IMPORTANCE_LOW).apply {
+                    description = "Progress while the on-device model downloads"
+                },
+                NotificationChannel(CH_SELFTEST, "Self-test", NotificationManager.IMPORTANCE_LOW).apply {
+                    description = "Test notifications Jev sends itself to check that it is working"
+                },
             ),
         )
     }
@@ -61,6 +67,30 @@ class Notifier(private val context: Context) {
             .setAutoCancel(true)
             .build()
         NotificationManagerCompat.from(context).notify(DIGEST_ID, n)
+    }
+
+    fun modelReady(summary: String) =
+        post(MODEL_READY_ID, CH_MODEL, "Jev model installed", summary, summary, openTab = "settings")
+
+    /**
+     * Posts sample notifications that the listener processes like any other app's,
+     * proving notification access + the pipeline work end to end.
+     */
+    fun postSelfTestNotifications(samples: List<Triple<String, String, String>>): Boolean {
+        if (!canPost()) return false
+        samples.forEachIndexed { i, (title, text, category) ->
+            val n = NotificationCompat.Builder(context, CH_SELFTEST)
+                .setSmallIcon(R.drawable.ic_stat_jev)
+                .setContentTitle(title)
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                .setCategory(category)
+                .addExtras(android.os.Bundle().apply { putBoolean(EXTRA_SELF_TEST, true) })
+                .setTimeoutAfter(15_000)
+                .build()
+            NotificationManagerCompat.from(context).notify(SELF_TEST_TAG, SELF_TEST_BASE_ID + i, n)
+        }
+        return true
     }
 
     fun spendingFlag(id: Int, title: String, message: String) =
@@ -108,6 +138,13 @@ class Notifier(private val context: Context) {
         const val CH_SCAM = "scam"
         const val CH_DIGEST = "digest"
         const val CH_MONEY = "money"
+        const val CH_MODEL = "model"
+        const val CH_SELFTEST = "selftest"
         const val DIGEST_ID = 1
+        const val MODEL_PROGRESS_ID = 2
+        const val MODEL_READY_ID = 3
+        const val SELF_TEST_BASE_ID = 100
+        const val SELF_TEST_TAG = "jev-self-test"
+        const val EXTRA_SELF_TEST = "app.jev.SELF_TEST"
     }
 }

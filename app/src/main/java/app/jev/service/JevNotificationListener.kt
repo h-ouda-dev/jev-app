@@ -67,6 +67,13 @@ class JevNotificationListener : NotificationListenerService() {
         val result = app.pipeline.process(event, prefs, learned)
         val bucket = result.triage.bucket
 
+        if (event.packageName == packageName) {
+            // Jev's own self-test notification: record the outcome, take no action.
+            app.db.notifications().insert(record(result, removed = false))
+            cancelNotification(sbn.key)
+            return
+        }
+
         val removable = settings.actOnNotifications && sbn.isClearable &&
             (bucket == TriageBucket.DIGEST || bucket == TriageBucket.SILENCE) &&
             event.category !in setOf(Notification.CATEGORY_CALL, Notification.CATEGORY_ALARM) &&
@@ -123,8 +130,8 @@ class JevNotificationListener : NotificationListenerService() {
     }
 
     private fun toEvent(sbn: StatusBarNotification): NotificationEvent? {
-        if (sbn.packageName == packageName) return null
         val n = sbn.notification
+        if (sbn.packageName == packageName && n.extras?.getBoolean(Notifier.EXTRA_SELF_TEST, false) != true) return null
         if (n.flags and Notification.FLAG_GROUP_SUMMARY != 0) return null
         if (sbn.isOngoing || n.flags and Notification.FLAG_FOREGROUND_SERVICE != 0) return null
         if (n.category in setOf(Notification.CATEGORY_PROGRESS, Notification.CATEGORY_TRANSPORT, Notification.CATEGORY_SERVICE)) return null
@@ -140,7 +147,8 @@ class JevNotificationListener : NotificationListenerService() {
             else -> null
         }
         return NotificationEvent(
-            key = sbn.key, packageName = sbn.packageName, appLabel = appLabel(sbn.packageName),
+            key = sbn.key, packageName = sbn.packageName,
+            appLabel = if (sbn.packageName == packageName) SELF_TEST_LABEL else appLabel(sbn.packageName),
             title = title, text = text, category = n.category, postedAt = sbn.postTime,
             sender = sender, isGroupConversation = isGroup,
         )
@@ -175,6 +183,7 @@ class JevNotificationListener : NotificationListenerService() {
 
     companion object {
         private const val TAG = "JevListener"
+        const val SELF_TEST_LABEL = "Jev self-test"
     }
 }
 

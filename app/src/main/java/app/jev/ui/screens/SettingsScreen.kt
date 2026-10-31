@@ -37,7 +37,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import app.jev.ml.ModelState
 import app.jev.ui.MainViewModel
 
 private val DIGEST_OPTIONS = listOf(8 * 60, 10 * 60 + 30, 12 * 60 + 30, 15 * 60, 18 * 60 + 30, 21 * 60)
@@ -47,7 +46,6 @@ private val DIGEST_OPTIONS = listOf(8 * 60, 10 * 60 + 30, 12 * 60 + 30, 15 * 60,
 fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val s by vm.settings.collectAsState()
-    val model by vm.modelState.collectAsState()
     val rules by vm.senderRules.collectAsState()
     var vipText by remember(s.vipNames) { mutableStateOf(s.vipNames.joinToString(", ")) }
     var budgetText by remember(s.monthlyBudget) { mutableStateOf(if (s.monthlyBudget > 0) "%.0f".format(s.monthlyBudget) else "") }
@@ -135,27 +133,17 @@ fun SettingsScreen(vm: MainViewModel, modifier: Modifier = Modifier) {
         ) { Text("Save budget") }
 
         SectionTitle("On-device model")
-        ToggleRow("Use the Jev model", "When off (or no model installed) Jev uses its built-in rules.", s.useModel) { v ->
+        ModelCard(vm, onImport = { picker.launch(arrayOf("*/*")) })
+        ToggleRow("Use the model for decisions", "When off, Jev uses only its built-in rules.", s.useModel) { v ->
             vm.updateSettings { it.copy(useModel = v) }
         }
-        Text(
-            when (val m = model) {
-                ModelState.NotInstalled -> "No model installed: using built-in rules. Import model.onnx + tokenizer.json (and optionally jev_config.json). See the README for how to export ModernBERT-JEV."
-                ModelState.Loading -> "Loading model…"
-                is ModelState.Ready -> "Model ready · ${m.sizeMb} MB · ~${m.msPerDecision} ms per 4-way decision\n${m.details}"
-                is ModelState.Failed -> "Model failed to load: ${m.message}. Using built-in rules."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Import model files") }
-            if (model !is ModelState.NotInstalled) OutlinedButton(onClick = { vm.deleteModel() }) { Text("Remove") }
-        }
+
+        SectionTitle("Diagnostics")
+        PipelineTestCard(vm)
 
         SectionTitle("Privacy")
         Text(
-            "Jev has no internet permission. Notifications, transactions and the model stay in the app's private storage. History older than ${s.keepDays} days is deleted automatically.",
+            "Notifications, messages and transactions are processed only on this phone and are never uploaded. Jev uses the internet only to download its model. History older than ${s.keepDays} days is deleted automatically.",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(horizontal = 16.dp),
         )

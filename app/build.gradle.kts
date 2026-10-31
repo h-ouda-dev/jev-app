@@ -17,6 +17,10 @@ android {
         versionName = "0.1.0"
         // The S25 Ultra (and every modern phone) is arm64; x86_64 keeps the emulator working.
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+
+        // Where the app downloads its model from: the GitHub release published by .github/workflows/model.yml.
+        buildConfigField("String", "MODEL_BASE_URL", "\"https://github.com/h-ouda-dev/jev-app/releases/download/model-v1\"")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -36,6 +40,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"

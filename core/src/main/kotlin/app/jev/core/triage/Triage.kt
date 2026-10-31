@@ -10,10 +10,11 @@ import app.jev.core.text.containsAnyPhrase
 import app.jev.core.text.norm
 
 enum class TriageBucket(val label: String, val choice: String) {
-    URGENT("Urgent", "urgent and needs attention right now"),
-    CAN_WAIT("Can wait", "can wait until later"),
-    DIGEST("Digest", "low priority and belongs in a summary digest"),
-    SILENCE("Silence", "noise that should be silenced");
+    // The choice text doubles as the NLI hypothesis: "This notification is <choice>."
+    URGENT("Urgent", "urgent"),
+    CAN_WAIT("Can wait", "not urgent but needs a reply later"),
+    DIGEST("Digest", "a low priority update like social media or a newsletter"),
+    SILENCE("Silence", "an advertisement or spam");
 
     companion object {
         fun fromChoice(choice: String) = entries.first { it.choice == choice }
@@ -40,7 +41,7 @@ class TriageEngine(private val router: DecisionRouter) {
 
         val isVip = isVip(event, prefs)
         val request = request(event, isVip)
-        val decision = router.decide(request) { rules(event, isVip) }
+        val decision = router.decide(request, RULES_WEIGHT) { rules(event, isVip) }
         val bucket = TriageBucket.fromChoice(decision.choice)
         // A VIP should never be silenced by a model guess.
         val safeBucket = if (isVip && bucket.ordinal > TriageBucket.CAN_WAIT.ordinal) TriageBucket.CAN_WAIT else bucket
@@ -104,6 +105,8 @@ class TriageEngine(private val router: DecisionRouter) {
 
     companion object {
         const val QUESTION = "This notification is"
+        /** How much the rules count next to the model (see Ensemble). */
+        const val RULES_WEIGHT = 1f
         val URGENT_WORDS = listOf(
             "urgent", "asap", "emergency", "call me", "right now", "immediately", "help", "hospital",
             "accident", "missed call", "are you ok", "where are you", "now please", "flight delayed",

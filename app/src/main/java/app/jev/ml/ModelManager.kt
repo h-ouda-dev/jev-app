@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
+import app.jev.core.DiagnosticReport
+import app.jev.core.Diagnostics
 import app.jev.core.model.DecisionRequest
 import app.jev.core.model.DecisionRouter
 import app.jev.core.model.JevModelConfig
@@ -13,6 +15,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -23,52 +27,108 @@ sealed interface ModelState {
     data class Failed(val message: String) : ModelState
 }
 
+sealed interface SelfTestState {
+    data object Idle : SelfTestState
+    data class Running(val done: Int, val total: Int) : SelfTestState
+    data class Done(val report: DiagnosticReport, val at: Long) : SelfTestState
+    data class Error(val message: String) : SelfTestState
+}
+
 /**
- * Owns the on-device model files (app-private storage, never uploaded) and
- * plugs the loaded model into the shared [DecisionRouter].
+ * Owns the on-device model files (app-private storage) and plugs the loaded
+ * model into the shared [DecisionRouter]. Models arrive either by download
+ * ([ModelDownloadWorker]) or manual import.
  */
 class ModelManager(private val context: Context, private val router: DecisionRouter) {
     private val dir = File(context.filesDir, "model").apply { mkdirs() }
+    /** Download staging area; files move into [dir] only after every checksum passes. */
+    val stagingDir = File(context.filesDir, "model-download")
     private val modelFile = File(dir, "model.onnx")
     private val tokenizerFile = File(dir, "tokenizer.json")
     private val configFile = File(dir, "jev_config.json")
+    private val infoFile = File(dir, "installed.txt")
+    private val lock = Mutex()
 
     private val _state = MutableStateFlow<ModelState>(ModelState.NotInstalled)
     val state: StateFlow<ModelState> = _state.asStateFlow()
+    private val _selfTest = MutableStateFlow<SelfTestState>(SelfTestState.Idle)
+    val selfTest: StateFlow<SelfTestState> = _selfTest.asStateFlow()
     private var encoder: OnnxEncoder? = null
 
     val isInstalled: Boolean get() = modelFile.exists() && tokenizerFile.exists()
+    val installedId: String? get() = infoFile.takeIf { it.exists() }?.readText()?.trim()
 
-    suspend fun loadIfPresent(enabled: Boolean) = withContext(Dispatchers.Default) {
-        unload()
-        if (!enabled || !isInstalled) {
-            _state.value = ModelState.NotInstalled
-            return@withContext
-        }
-        _state.value = ModelState.Loading
-        try {
-            val tokenizer = ByteLevelBpeTokenizer.fromJson(tokenizerFile.readText())
-            val config = if (configFile.exists()) JevModelConfig.fromJson(configFile.readText()) else JevModelConfig()
-            val enc = OnnxEncoder(modelFile, tokenizer)
-            val model = PairScoringDecisionModel(config, enc::forward)
-            // Warm up + measure one realistic decision (4 choices, like triage).
-            val probe = DecisionRequest(
-                "App: WhatsApp. From: Sara. Message: are you coming to the meeting?",
-                "This notification is",
-                listOf("urgent", "can wait", "digest", "silence"),
-            )
-            model.decide(probe)
-            val t0 = System.nanoTime()
-            model.decide(probe)
-            val ms = (System.nanoTime() - t0) / 1_000_000
-            encoder = enc
-            router.model = model
-            _state.value = ModelState.Ready(modelFile.length() / (1024 * 1024), ms, enc.description)
-        } catch (t: Throwable) {
-            Log.e(TAG, "Model load failed", t)
+    suspend fun loadIfPresent(enabled: Boolean) = lock.withLock {
+        withContext(Dispatchers.Default) {
             unload()
-            _state.value = ModelState.Failed(t.message ?: t.javaClass.simpleName)
+            if (!enabled || !isInstalled) {
+                _state.value = ModelState.NotInstalled
+                return@withContext
+            }
+            _state.value = ModelState.Loading
+            try {
+                val tokenizer = ByteLevelBpeTokenizer.fromJson(tokenizerFile.readText())
+                val config = if (configFile.exists()) JevModelConfig.fromJson(configFile.readText()) else JevModelConfig()
+                val enc = OnnxEncoder(modelFile, tokenizer)
+                val model = PairScoringDecisionModel(config, enc::forward)
+                // Warm up + measure one realistic decision (4 choices, like triage).
+                val probe = DecisionRequest(
+                    "App: WhatsApp. From: Sara. Message: are you coming to the meeting?",
+                    "This notification is",
+                    listOf("urgent", "can wait", "digest", "silence"),
+                )
+                model.decide(probe)
+                val t0 = System.nanoTime()
+                model.decide(probe)
+                val ms = (System.nanoTime() - t0) / 1_000_000
+                encoder = enc
+                router.model = model
+                _state.value = ModelState.Ready(modelFile.length() / (1024 * 1024), ms, (installedId?.let { "$it · " } ?: "") + enc.description)
+            } catch (t: Throwable) {
+                Log.e(TAG, "Model load failed", t)
+                unload()
+                _state.value = ModelState.Failed(t.message ?: t.javaClass.simpleName)
+            }
         }
+    }
+
+    /** Moves verified downloaded files from [stagingDir] into place. */
+    suspend fun installFromStaging(manifest: RemoteManifest) = lock.withLock {
+        withContext(Dispatchers.IO) {
+            unload()
+            for (f in manifest.files) {
+                val src = File(stagingDir, f.name)
+                val dst = File(dir, f.name)
+                dst.delete()
+                if (!src.renameTo(dst)) {
+                    src.copyTo(dst, overwrite = true)
+                    src.delete()
+                }
+            }
+            infoFile.writeText("${manifest.id} (${manifest.sourceModel})")
+            stagingDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * Runs the built-in self-test on the loaded model: real feature requests
+     * with known answers. Proves the model loads, answers in valid
+     * probabilities, and is accurate enough, and shows the speed on this phone.
+     */
+    suspend fun runSelfTest(): SelfTestState = withContext(Dispatchers.Default) {
+        val model = router.model
+        val result = if (model == null) {
+            SelfTestState.Error("No model loaded")
+        } else {
+            try {
+                val report = Diagnostics.run(model) { done, total -> _selfTest.value = SelfTestState.Running(done, total) }
+                SelfTestState.Done(report, System.currentTimeMillis())
+            } catch (t: Throwable) {
+                SelfTestState.Error(t.message ?: t.javaClass.simpleName)
+            }
+        }
+        _selfTest.value = result
+        result
     }
 
     /** Copies user-picked files (model .onnx, tokenizer.json, optional jev_config.json) into private storage. */
@@ -89,13 +149,18 @@ class ModelManager(private val context: Context, private val router: DecisionRou
             }
             imported += name
         }
+        if (imported.isNotEmpty()) infoFile.writeText("imported")
         if (imported.isEmpty()) "No model files recognised. Pick model.onnx and tokenizer.json." else "Imported: ${imported.joinToString()}"
     }
 
-    suspend fun delete() = withContext(Dispatchers.IO) {
-        unload()
-        dir.listFiles()?.forEach { it.delete() }
-        _state.value = ModelState.NotInstalled
+    suspend fun delete() = lock.withLock {
+        withContext(Dispatchers.IO) {
+            unload()
+            dir.listFiles()?.forEach { it.delete() }
+            stagingDir.deleteRecursively()
+            _state.value = ModelState.NotInstalled
+            _selfTest.value = SelfTestState.Idle
+        }
     }
 
     private fun unload() {

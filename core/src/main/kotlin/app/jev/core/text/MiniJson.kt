@@ -112,7 +112,7 @@ object MiniJson {
 }
 
 @Suppress("UNCHECKED_CAST")
-internal fun Any?.asMap(): Map<String, Any?>? = this as? Map<String, Any?>
+fun Any?.asMap(): Map<String, Any?>? = this as? Map<String, Any?>
 
 @Suppress("UNCHECKED_CAST")
-internal fun Any?.asList(): List<Any?>? = this as? List<Any?>
+fun Any?.asList(): List<Any?>? = this as? List<Any?>

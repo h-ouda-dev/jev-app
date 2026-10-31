@@ -27,6 +27,12 @@ interface NotificationDao {
     @Query("UPDATE notifications SET bucket = :bucket, confidence = 1, reason = :reason, decidedBy = 'YOU' WHERE senderKey = :senderKey")
     suspend fun relabelSender(senderKey: String, bucket: String, reason: String)
 
+    @Query("SELECT * FROM notifications WHERE packageName = :pkg AND postedAt >= :since")
+    suspend fun postedBySince(pkg: String, since: Long): List<NotificationRecord>
+
+    @Query("DELETE FROM notifications WHERE packageName = :pkg")
+    suspend fun deleteByPackage(pkg: String)
+
     @Query("DELETE FROM notifications WHERE postedAt < :before")
     suspend fun deleteOlderThan(before: Long)
 

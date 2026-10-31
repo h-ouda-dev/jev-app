@@ -35,8 +35,19 @@ class ModelTest {
         val req = DecisionRequest("s", "q", listOf("x", "y"))
         val fallback = { r: DecisionRequest -> Decision.fromLogits(r.choices, floatArrayOf(0f, 5f), DecisionSource.RULES) }
         val broken = DecisionRouter({ error("boom") })
-        assertEquals("y", broken.decide(req, fallback).choice)
+        assertEquals("y", broken.decide(req, fallback = fallback).choice)
         val unsure = DecisionRouter({ Decision.fromLogits(it.choices, floatArrayOf(0.1f, 0f), DecisionSource.MODEL) }, minModelConfidence = 0.8f)
-        assertEquals(DecisionSource.RULES, unsure.decide(req, fallback).source)
+        assertEquals(DecisionSource.RULES, unsure.decide(req, fallback = fallback).source)
+    }
+}
+
+class EnsembleTest {
+    @Test fun rulesCanOverruleAnUnsureModel() {
+        val model = Decision.fromLogits(listOf("a", "b"), floatArrayOf(0.3f, 0f), DecisionSource.MODEL)
+        val rules = Decision.fromLogits(listOf("a", "b", "other"), floatArrayOf(0f, 3f, 0f), DecisionSource.RULES)
+        val d = app.jev.core.model.Ensemble.combine(model, rules, 1f)
+        assertEquals("b", d.choice)
+        assertEquals(1f, d.probabilities.values.sum(), 1e-4f)
+        assertTrue("other" in d.probabilities)
     }
 }

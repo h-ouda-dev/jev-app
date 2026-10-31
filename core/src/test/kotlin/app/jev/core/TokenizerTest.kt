@@ -12,7 +12,8 @@ class TokenizerTest {
       "added_tokens": [
         {"id": 0, "content": "[CLS]", "special": true},
         {"id": 1, "content": "[SEP]", "special": true},
-        {"id": 2, "content": "[UNK]", "special": true}
+        {"id": 2, "content": "[UNK]", "special": true},
+        {"id": 16, "content": "   ", "special": false}
       ],
       "pre_tokenizer": {"type": "ByteLevel", "add_prefix_space": false, "trim_offsets": true, "use_regex": true},
       "post_processor": {
@@ -42,6 +43,11 @@ class TokenizerTest {
 
     @Test fun unknownCharactersBecomeUnk() {
         assertEquals(listOf(9, 2), tok.tokenize("hiz"))
+    }
+
+    @Test fun addedTokensAreMatchedBeforeBpe() {
+        // "   " is an added token (ModernBERT has these for whitespace runs).
+        assertEquals(listOf(9, 16, 9), tok.tokenize("hi   hi"))
     }
 
     @Test fun pairTemplateAndTruncation() {

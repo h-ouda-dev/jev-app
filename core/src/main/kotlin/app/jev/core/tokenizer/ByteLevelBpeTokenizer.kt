@@ -23,7 +23,14 @@ class ByteLevelBpeTokenizer private constructor(
     private val pairTemplate: List<Piece>,
     private val unkId: Int?,
     private val addPrefixSpace: Boolean,
+    /** Added tokens (e.g. ModernBERT's whitespace runs) matched before BPE, like HF does. */
+    private val addedTokens: Map<String, Int> = emptyMap(),
 ) {
+    private val addedPattern: Regex? = addedTokens.keys.filter { it.isNotEmpty() }
+        .sortedByDescending { it.length }
+        .takeIf { it.isNotEmpty() }
+        ?.let { toks -> Regex(toks.joinToString("|") { Regex.escape(it) }) }
+
     sealed interface Piece {
         data class Special(val id: Int) : Piece
         data class Seq(val second: Boolean) : Piece
@@ -41,14 +48,30 @@ class ByteLevelBpeTokenizer private constructor(
         build(tokenize(a), tokenize(b), pairTemplate, maxLength)
 
     fun tokenize(text: String): List<Int> {
-        val input = if (addPrefixSpace && text.isNotEmpty() && !text[0].isWhitespace()) " $text" else text
         val out = ArrayList<Int>()
+        val pattern = addedPattern
+        if (pattern == null) {
+            tokenizeSegment(text, out, first = true)
+            return out
+        }
+        // Leftmost-longest split on added tokens, then BPE the text between them.
+        var pos = 0
+        for (m in pattern.findAll(text)) {
+            if (m.range.first > pos) tokenizeSegment(text.substring(pos, m.range.first), out, first = pos == 0)
+            out.add(addedTokens.getValue(m.value))
+            pos = m.range.last + 1
+        }
+        if (pos < text.length) tokenizeSegment(text.substring(pos), out, first = pos == 0)
+        return out
+    }
+
+    private fun tokenizeSegment(text: String, out: MutableList<Int>, first: Boolean) {
+        val input = if (first && addPrefixSpace && text.isNotEmpty() && !text[0].isWhitespace()) " $text" else text
         for (m in PRETOKENIZE.findAll(input)) {
             val word = m.value.toByteArray(Charsets.UTF_8).joinToString("") { BYTE_ENCODER[it.toInt() and 0xFF].toString() }
             val ids = synchronized(cache) { cache[word] } ?: bpe(word).also { synchronized(cache) { cache[word] = it } }
             ids.forEach { out.add(it) }
         }
-        return out
     }
 
     private fun bpe(word: String): IntArray {
@@ -155,7 +178,7 @@ class ByteLevelBpeTokenizer private constructor(
             val unk = (model["unk_token"] as? String)?.let { vocab[it] }
             val addPrefix = root["pre_tokenizer"].findByteLevel()?.get("add_prefix_space") as? Boolean ?: false
             val (single, pair) = templates(root["post_processor"].asMap(), vocab)
-            return ByteLevelBpeTokenizer(vocab, ranks, single, pair, unk, addPrefix)
+            return ByteLevelBpeTokenizer(vocab, ranks, single, pair, unk, addPrefix, added)
         }
 
         private fun Any?.findByteLevel(): Map<String, Any?>? {

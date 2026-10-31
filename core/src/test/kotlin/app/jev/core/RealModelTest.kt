@@ -82,15 +82,29 @@ class RealModelTest {
         println("Tokenizer: ${cases.size} reference pairs match Hugging Face exactly")
     }
 
+    private fun referenceCases() = MiniJson.parse(File(dir, "reference.json").readText()).asMap()!!["tokenization"].asList()!!.map { it.asMap()!! }
+
     @Test fun logitsMatchPythonOnnxRuntime() {
         requireModel()
-        val ref = MiniJson.parse(File(dir, "reference.json").readText()).asMap()!!
-        val cases = ref["tokenization"].asList()!!.map { it.asMap()!! }
-        val got = forward(cases.map { it["a"] as String to it["b"] as String }, 512)
-        cases.forEachIndexed { i, c ->
+        referenceCases().forEachIndexed { i, c ->
+            val got = forward(listOf(c["a"] as String to c["b"] as String), 512)[0]
             val expected = c["logits"].asList()!!.map { (it as Number).toFloat() }
-            expected.forEachIndexed { j, v -> assertEquals("logit[$i][$j]", v, got[i][j], 0.05f) }
+            expected.forEachIndexed { j, v -> assertEquals("logit[$i][$j]", v, got[j], 0.02f) }
         }
+    }
+
+    /** The app scores all choices in one padded batch; padding must not change the result. */
+    @Test fun batchingDoesNotChangeLogits() {
+        requireModel()
+        val pairs = referenceCases().map { it["a"] as String to it["b"] as String }
+        val batched = forward(pairs, 512)
+        var maxDiff = 0f
+        pairs.forEachIndexed { i, p ->
+            val single = forward(listOf(p), 512)[0]
+            single.indices.forEach { j -> maxDiff = maxOf(maxDiff, kotlin.math.abs(single[j] - batched[i][j])) }
+        }
+        println("Batched vs single max |diff| = $maxDiff")
+        assertTrue("Padding changes logits by $maxDiff", maxDiff < 0.05f)
     }
 
     @Test fun diagnosticsPassWithRealModel() {
@@ -101,16 +115,18 @@ class RealModelTest {
         println("=== Jev self-test with ${dir!!.name} ===")
         report.results.forEach { r ->
             val p = r.decision?.let { "%.2f".format(it.confidence) } ?: "ERR"
-            println("${if (r.passed) "PASS" else "FAIL"}  [${r.case.feature}] ${r.case.name}: ${r.decision?.choice} ($p, ${r.millis} ms)" +
+            val raw = r.modelDecision?.let { "model alone: ${it.choice} %.2f".format(it.confidence) } ?: ""
+            println("${if (r.passed) "PASS" else "FAIL"}  [${r.case.feature}] ${r.case.name}: ${r.decision?.choice} ($p, ${r.millis} ms; $raw)" +
                 if (r.passed) "" else "  expected ${r.case.accepted}")
         }
         report.byFeature().forEach { (f, s) -> println("$f: ${s.first}/${s.second}") }
-        println("Model accuracy ${(report.accuracy * 100).toInt()}%  (rules ${(report.rulesAccuracy * 100).toInt()}%), median ${report.medianMillis} ms/decision on CI CPU")
+        println("App accuracy (model+rules) ${(report.accuracy * 100).toInt()}%  model alone ${(report.modelOnlyAccuracy * 100).toInt()}%  rules alone ${(report.rulesAccuracy * 100).toInt()}%  median ${report.medianMillis} ms/decision on CI CPU")
         assertEquals("Model errors", 0, report.errors)
         assertTrue("Decisions must be well-formed distributions", report.wellFormed)
-        assertTrue("Model accuracy too low: ${report.accuracy}", report.accuracy >= MIN_ACCURACY)
+        assertTrue("Accuracy too low: ${report.accuracy}", report.accuracy >= MIN_ACCURACY)
+        assertTrue("Model must not make the rules worse", report.accuracy >= report.rulesAccuracy - 0.1f)
     }
 }
 
-/** Floor for the zero-shot model on the built-in self-test; raised as the model improves. */
-const val MIN_ACCURACY = 0.6f
+/** Floor for what the app uses (model blended with rules) on the built-in self-test. */
+const val MIN_ACCURACY = 0.8f

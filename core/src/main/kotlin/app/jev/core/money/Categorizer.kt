@@ -19,18 +19,20 @@ class Categorizer(private val router: DecisionRouter) {
             return BudgetCategory.INCOME to Decision(BudgetCategory.INCOME.choice, 1f, mapOf(BudgetCategory.INCOME.choice to 1f), DecisionSource.RULES)
         }
         val request = request(tx)
-        val decision = router.decide(request) { rules(tx, request.choices) }
+        val decision = router.decide(request, RULES_WEIGHT) { rules(tx, request.choices) }
         return BudgetCategory.fromChoice(decision.choice) to decision
     }
 
     fun request(tx: ParsedTransaction) = DecisionRequest(
         state = "Card payment of ${"%.2f".format(java.util.Locale.ROOT, tx.amount)} ${tx.currency} at ${tx.merchant}. Bank message: ${compact(tx.rawText, 300)}",
         question = "This purchase is for",
-        choices = BudgetCategory.entries.filter { it != BudgetCategory.INCOME }.map { it.choice },
+        // "Something else" is left out for the model (NLI models find it true of everything);
+        // the rules can still pick it.
+        choices = BudgetCategory.entries.filter { it != BudgetCategory.INCOME && it != BudgetCategory.OTHER }.map { it.choice },
     )
 
     fun rules(tx: ParsedTransaction, choices: List<String>): Decision {
-        val r = ScoredRules(choices).add(BudgetCategory.OTHER.choice, 0.5f)
+        val r = ScoredRules((choices + BudgetCategory.OTHER.choice).distinct()).add(BudgetCategory.OTHER.choice, 0.5f)
         val hay = (tx.merchant + " " + tx.rawText).lowercase()
         for ((cat, words) in KEYWORDS) {
             val hits = words.count { hay.containsPhrase(it) }
@@ -40,6 +42,7 @@ class Categorizer(private val router: DecisionRouter) {
     }
 
     companion object {
+        const val RULES_WEIGHT = 1f
         val KEYWORDS: Map<BudgetCategory, List<String>> = mapOf(
             BudgetCategory.GROCERIES to listOf("carrefour", "lulu", "monoprix", "al meera", "megamart", "spinneys", "family food", "safari", "grand hypermarket", "supermarket", "hypermarket", "grocery", "walmart", "tesco", "aldi", "lidl", "kroger", "whole foods", "costco"),
             BudgetCategory.DINING to listOf("restaurant", "cafe", "coffee", "starbucks", "costa", "tim hortons", "mcdonald", "kfc", "burger", "pizza", "shawarma", "talabat", "snoonu", "deliveroo", "uber eats", "doordash", "careem food", "bakery", "grill"),

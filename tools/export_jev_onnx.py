@@ -61,6 +61,37 @@ REFERENCE_PAIRS = [
 ]
 
 
+def consistency_report(tok, model, fp32_path, final_path):
+    """Does padding (batching several choices) or int8 quantisation change the answer?"""
+    import numpy as np
+    import onnxruntime as ort
+    pairs = REFERENCE_PAIRS
+    single_t = []
+    with torch.no_grad():
+        for a, b in pairs:
+            e = tok(a, b, return_tensors="pt")
+            single_t.append(model(**e).logits[0].numpy())
+        eb = tok([p[0] for p in pairs], [p[1] for p in pairs], return_tensors="pt", padding=True)
+        batched_t = model(**eb).logits.numpy()
+    print("torch fp32  batched-vs-single max |diff|:", float(np.abs(batched_t - np.stack(single_t)).max()))
+    for name, path in (("onnx fp32", fp32_path), ("onnx int8", final_path)):
+        s = ort.InferenceSession(path)
+        single = []
+        for a, b in pairs:
+            e = tok(a, b, return_tensors="np")
+            single.append(s.run(None, {"input_ids": e["input_ids"].astype(np.int64), "attention_mask": e["attention_mask"].astype(np.int64)})[0][0])
+        single = np.stack(single)
+        for pad_name, pad_id in (("tokenizer pad", None), ("pad id 0", 0)):
+            ids = eb["input_ids"].numpy().astype(np.int64).copy()
+            mask = eb["attention_mask"].numpy().astype(np.int64)
+            if pad_id is not None:
+                ids[mask == 0] = pad_id
+            batched = s.run(None, {"input_ids": ids, "attention_mask": mask})[0]
+            print(f"{name}  batched({pad_name})-vs-single max |diff|:", float(np.abs(batched - single).max()))
+        print(f"{name}  vs torch single max |diff|:", float(np.abs(single - np.stack(single_t)).max()))
+        print(f"{name}  argmax agrees with torch on", int((single.argmax(1) == np.stack(single_t).argmax(1)).sum()), "/", len(pairs))
+
+
 def write_reference(out_dir, tok, model, max_length):
     """Token ids + logits from the Python stack, for the app's JVM tests to match exactly."""
     import numpy as np
@@ -127,11 +158,12 @@ def main():
 
     final = os.path.join(args.out, "model.onnx")
     if args.no_quantize:
-        shutil.move(fp32, final)
+        shutil.copy(fp32, final)
     else:
         from onnxruntime.quantization import QuantType, quantize_dynamic
         quantize_dynamic(fp32, final, weight_type=QuantType.QInt8)
-        os.remove(fp32)
+    consistency_report(tok, model, fp32, final)
+    os.remove(fp32)
 
     tok.save_pretrained(args.out)  # writes tokenizer.json
     for extra in os.listdir(args.out):
