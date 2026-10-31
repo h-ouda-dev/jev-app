@@ -32,6 +32,8 @@ data class NotificationRecord(
     /** Raised RedFlag names, comma separated. */
     val scamFlags: String? = null,
     val latencyMs: Long = 0,
+    /** When the user dealt with it: opened/dismissed in the shade, cleared by the app, or opened from Heron. */
+    val handledAt: Long? = null,
 )
 
 @Entity(tableName = "transactions", indices = [Index("timestamp"), Index("merchantKey")])

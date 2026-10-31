@@ -42,6 +42,12 @@ class HeronNotificationListener : NotificationListenerService() {
      * When Heron (re)connects, bank alerts already sitting in the shade are
      * added to Money, so nothing posted while it was off is lost.
      */
+    /** The user (or the app) dealt with it: it leaves Heron's "needs you" lists too. */
+    override fun onNotificationRemoved(sbn: StatusBarNotification, rankingMap: RankingMap?, reason: Int) {
+        if (reason == REASON_LISTENER_CANCEL || reason == REASON_LISTENER_CANCEL_ALL) return // Heron moved it, not the user
+        scope.launch { heron.db.notifications().markHandled(sbn.key, System.currentTimeMillis()) }
+    }
+
     override fun onListenerDisconnected() {
         NotificationActions.attach(null)
         super.onListenerDisconnected()
@@ -52,6 +58,8 @@ class HeronNotificationListener : NotificationListenerService() {
         NotificationActions.attach(this)
         val active = try { activeNotifications } catch (_: Exception) { null } ?: return
         scope.launch {
+            // Anything resolved while Heron wasn't listening is done now.
+            heron.db.notifications().markHandledUnlessActive(active.map { it.key }, System.currentTimeMillis() - 7 * 86_400_000L, System.currentTimeMillis())
             for (sbn in active) {
                 val event = toEvent(sbn) ?: continue
                 NotificationActions.remember(sbn.key, sbn.notification.contentIntent)

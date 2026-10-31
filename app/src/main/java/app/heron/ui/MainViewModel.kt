@@ -72,9 +72,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /** Opens a notification in the app that posted it (the exact chat/item when possible). */
     fun openInApp(context: Context, r: NotificationRecord) {
         when (NotificationActions.open(context, r.packageName, r.sbnKey)) {
-            NotificationActions.Result.NOT_INSTALLED -> _message.value = "${r.appLabel} isn't installed on this phone"
-            else -> Unit
+            NotificationActions.Result.NOT_INSTALLED -> {
+                _message.value = "${r.appLabel} isn't installed on this phone"
+                return
+            }
+            NotificationActions.Result.OPENED_APP ->
+                _message.value = "Opened ${r.appLabel}. The link to this exact ${if (r.sender != null) "conversation" else "item"} has expired."
+            NotificationActions.Result.OPENED_ITEM -> Unit
         }
+        NotificationActions.dismiss(r.sbnKey)
+        viewModelScope.launch { db.notifications().markHandled(r.sbnKey, System.currentTimeMillis()) }
+    }
+
+    fun markHandled(r: NotificationRecord) = viewModelScope.launch {
+        NotificationActions.dismiss(r.sbnKey)
+        db.notifications().markHandled(r.sbnKey, System.currentTimeMillis())
+    }
+
+    /** Syncs with the shade: what's no longer there has been handled. Call when screens resume. */
+    fun reconcileWithShade() = viewModelScope.launch {
+        val active = NotificationActions.activeKeys() ?: return@launch
+        db.notifications().markHandledUnlessActive(active.toList(), System.currentTimeMillis() - 7 * 86_400_000L, System.currentTimeMillis())
     }
 
     // ---- History import (Money) ----

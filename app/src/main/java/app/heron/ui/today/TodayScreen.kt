@@ -92,12 +92,15 @@ fun TodayScreen(vm: MainViewModel, openTab: (Tab) -> Unit, openSettings: () -> U
     var access by remember { mutableStateOf(vm.hasNotificationAccess()) }
     LifecycleResumeEffect(Unit) {
         access = vm.hasNotificationAccess()
+        vm.reconcileWithShade()
         onPauseOrDispose { }
     }
 
     val today = all.filter { isToday(it.postedAt) && it.packageName != context.packageName }
     fun count(b: TriageBucket) = today.count { it.bucket == b.name }
-    val urgent = today.filter { it.bucket == TriageBucket.URGENT.name }
+    // Only what still needs you: opened, dismissed or cleared notifications drop off.
+    val urgent = all.filter { it.bucket == TriageBucket.URGENT.name && it.handledAt == null && it.packageName != context.packageName }
+        .filter { System.currentTimeMillis() - it.postedAt < 2 * 86_400_000L }
     val threats = today.filter { it.scamVerdict != null && it.scamVerdict != ScamVerdict.SAFE.name }
     val checked = today.count { it.scamVerdict != null }
 

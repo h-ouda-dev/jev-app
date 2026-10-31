@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
+import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.GppBad
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Inbox
@@ -49,7 +50,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,15 +77,28 @@ import app.heron.ui.theme.Heron
 import app.heron.ui.theme.bucketColor
 import app.heron.ui.theme.verdictColor
 
+private const val DONE = "DONE"
+
 @Composable
 fun InboxScreen(vm: MainViewModel, openShield: (String) -> Unit) {
     val context = LocalContext.current
     val all by vm.notifications.collectAsState()
     val settings by vm.settings.collectAsState()
-    val items = all.filter { it.packageName != context.packageName }
+    val everything = all.filter { it.packageName != context.packageName }
+    // Inbox shows what still needs handling; what you've dealt with moves to Done.
+    val items = everything.filter { it.handledAt == null }
+    val done = everything.filter { it.handledAt != null }
     var filter by rememberSaveable { mutableStateOf<String?>(null) }
     var selected by remember { mutableStateOf<NotificationRecord?>(null) }
-    val shown = if (filter == null) items else items.filter { it.bucket == filter }
+    LifecycleResumeEffect(Unit) {
+        vm.reconcileWithShade()
+        onPauseOrDispose { }
+    }
+    val shown = when (filter) {
+        null -> items
+        DONE -> done
+        else -> items.filter { it.bucket == filter }
+    }
     val grouped = shown.groupBy { dayLabel(it.postedAt) }
 
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -96,6 +112,7 @@ fun InboxScreen(vm: MainViewModel, openShield: (String) -> Unit) {
                 TriageBucket.entries.forEach { b ->
                     FilterPill(b.label, items.count { it.bucket == b.name }, b, filter == b.name) { filter = b.name }
                 }
+                FilterPill("Done", done.size, null, filter == DONE) { filter = DONE }
             }
         }
         if (!settings.actOnNotifications && items.isNotEmpty()) {
@@ -118,11 +135,21 @@ fun InboxScreen(vm: MainViewModel, openShield: (String) -> Unit) {
         }
         if (shown.isEmpty()) {
             item {
-                val b = filter?.let { TriageBucket.valueOf(it) }
+                val b = filter?.takeIf { it != DONE }?.let { TriageBucket.valueOf(it) }
                 EmptyState(
-                    icon = b?.icon() ?: Icons.Rounded.Inbox,
-                    title = if (items.isEmpty()) "Nothing here yet" else "Nothing in ${b?.label ?: "this view"}",
-                    body = if (items.isEmpty()) "Notifications appear here as Heron sorts them." else b?.blurb() ?: "",
+                    icon = b?.icon() ?: if (filter == null && everything.isNotEmpty()) Icons.Rounded.DoneAll else Icons.Rounded.Inbox,
+                    title = when {
+                        everything.isEmpty() -> "Nothing here yet"
+                        filter == null -> "All caught up"
+                        filter == DONE -> "Nothing handled yet"
+                        else -> "Nothing in ${b?.label}"
+                    },
+                    body = when {
+                        everything.isEmpty() -> "Notifications appear here as Heron sorts them."
+                        filter == null -> "Everything has been dealt with. Handled notifications are in Done."
+                        filter == DONE -> "Notifications you open or dismiss move here."
+                        else -> b?.blurb() ?: ""
+                    },
                     tint = b?.let { bucketColor(it) } ?: MaterialTheme.colorScheme.primary,
                 )
             }
@@ -154,6 +181,7 @@ fun InboxScreen(vm: MainViewModel, openShield: (String) -> Unit) {
             onTeach = { vm.teach(r, it); selected = null },
             onCheckScam = { openShield(r.text); selected = null },
             onOpen = { vm.openInApp(context, r); selected = null },
+            onMarkDone = { vm.markHandled(r); selected = null },
         )
     }
 }
@@ -189,7 +217,7 @@ private fun FilterPill(label: String, count: Int, bucket: TriageBucket?, selecte
 private fun NotificationRow(r: NotificationRecord, onOpen: () -> Unit, onDetails: () -> Unit) {
     val bucket = TriageBucket.valueOf(r.bucket)
     val verdict = r.scamVerdict?.let { ScamVerdict.valueOf(it) }?.takeIf { it != ScamVerdict.SAFE }
-    Row(Modifier.fillMaxWidth().combinedClickable(onClick = onOpen, onLongClick = onDetails).padding(vertical = 13.dp), verticalAlignment = Alignment.Top) {
+    Row(Modifier.fillMaxWidth().alpha(if (r.handledAt != null) 0.55f else 1f).combinedClickable(onClick = onOpen, onLongClick = onDetails).padding(vertical = 13.dp), verticalAlignment = Alignment.Top) {
         AppIcon(r.packageName, r.sender ?: r.appLabel, size = 44.dp, fallbackColor = bucketColor(bucket))
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
@@ -225,7 +253,7 @@ private fun NotificationRow(r: NotificationRecord, onOpen: () -> Unit, onDetails
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DecisionSheet(r: NotificationRecord, onDismiss: () -> Unit, onTeach: (TriageBucket) -> Unit, onCheckScam: () -> Unit, onOpen: () -> Unit) {
+private fun DecisionSheet(r: NotificationRecord, onDismiss: () -> Unit, onTeach: (TriageBucket) -> Unit, onCheckScam: () -> Unit, onOpen: () -> Unit, onMarkDone: () -> Unit) {
     val bucket = TriageBucket.valueOf(r.bucket)
     val probs = r.probabilities.split(';').mapNotNull { part ->
         val (k, v) = part.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
@@ -295,7 +323,9 @@ private fun DecisionSheet(r: NotificationRecord, onDismiss: () -> Unit, onTeach:
                 }
             }
             Spacer(Modifier.height(12.dp))
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth(), shape = CircleShape) { Text("Done") }
+            OutlinedButton(onClick = { if (r.handledAt == null) onMarkDone() else onDismiss() }, modifier = Modifier.fillMaxWidth(), shape = CircleShape) {
+                Text(if (r.handledAt == null) "Mark as done" else "Close")
+            }
         }
     }
 }

@@ -32,6 +32,18 @@ object NotificationActions {
 
     enum class Result { OPENED_ITEM, OPENED_APP, NOT_INSTALLED }
 
+    /** Keys of notifications currently in the shade, or null if Heron isn't connected. */
+    fun activeKeys(): Set<String>? = try {
+        listener?.get()?.activeNotifications?.map { it.key }?.toSet()
+    } catch (_: Exception) {
+        null
+    }
+
+    /** Removes it from the shade, like tapping an auto-cancel notification would. */
+    fun dismiss(key: String) {
+        try { listener?.get()?.cancelNotification(key) } catch (_: Exception) { }
+    }
+
     fun open(context: Context, packageName: String, key: String): Result {
         val pending = synchronized(intents) { intents[key] }
             ?: try {

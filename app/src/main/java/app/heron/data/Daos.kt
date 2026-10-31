@@ -18,6 +18,16 @@ interface NotificationDao {
     @Query("SELECT * FROM notifications WHERE scamVerdict IS NOT NULL AND scamVerdict != 'SAFE' ORDER BY postedAt DESC LIMIT 100")
     fun scamWarnings(): Flow<List<NotificationRecord>>
 
+    @Query("UPDATE notifications SET handledAt = :at WHERE sbnKey = :key AND handledAt IS NULL")
+    suspend fun markHandled(key: String, at: Long)
+
+    /** Anything no longer in the shade (and not moved out by Heron itself) has been dealt with. */
+    @Query("UPDATE notifications SET handledAt = :at WHERE handledAt IS NULL AND removedFromShade = 0 AND postedAt >= :since AND sbnKey NOT LIKE 'demo-%' AND sbnKey NOT IN (:activeKeys)")
+    suspend fun markHandledUnlessActive(activeKeys: List<String>, since: Long, at: Long)
+
+    @Query("UPDATE notifications SET handledAt = :at WHERE handledAt IS NULL AND removedFromShade = 0 AND postedAt >= :since")
+    suspend fun markAllHandledSince(since: Long, at: Long)
+
     @Query("SELECT * FROM notifications WHERE inDigest = 1 AND digestDelivered = 0 ORDER BY postedAt ASC")
     suspend fun pendingDigest(): List<NotificationRecord>
 
