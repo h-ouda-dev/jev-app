@@ -146,7 +146,7 @@ fun ShieldScreen(vm: MainViewModel, incoming: String?, onIncomingConsumed: () ->
                     ) {
                         Icon(Icons.Rounded.ContentPaste, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Paste & check")
+                        Text("Paste")
                     }
                     Button(onClick = { vm.check(text); focus.clearFocus() }, enabled = text.isNotBlank(), shape = CircleShape, modifier = Modifier.weight(1f)) {
                         Text("Check")
@@ -182,7 +182,7 @@ fun ShieldScreen(vm: MainViewModel, incoming: String?, onIncomingConsumed: () ->
                         val flags = w.scamFlags?.split(',')?.mapNotNull { n -> RedFlag.entries.firstOrNull { it.name == n } }.orEmpty()
                         Surface(onClick = { text = w.text; vm.check(w.text) }, color = MaterialTheme.colorScheme.surfaceContainerLowest) {
                             Row(Modifier.fillMaxWidth().padding(vertical = 13.dp), verticalAlignment = Alignment.Top) {
-                                AppIcon(w.packageName, w.appLabel, size = 44.dp, fallbackColor = verdictColor(verdict))
+                                AppIcon(w.packageName, w.sender ?: w.appLabel, size = 44.dp, fallbackColor = verdictColor(verdict))
                                 Spacer(Modifier.width(14.dp))
                                 Column(Modifier.weight(1f)) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {

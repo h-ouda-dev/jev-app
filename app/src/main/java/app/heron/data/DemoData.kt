@@ -88,7 +88,7 @@ object DemoData {
         db.notifications().clear()
         db.transactions().clear()
         if (app.settings.value.vipNames.isEmpty()) app.settings.update { it.copy(vipNames = setOf("Mom")) }
-        if (app.settings.value.monthlyBudget <= 0) app.settings.update { it.copy(monthlyBudget = 6000.0, currency = "QAR") }
+        if (app.settings.value.monthlyBudget <= 0 || app.settings.value.monthlyBudget == 6000.0) app.settings.update { it.copy(monthlyBudget = 9000.0, currency = "QAR") }
         val now = System.currentTimeMillis()
         val prefs = TriagePreferences(vipNames = app.settings.value.vipNames)
 
@@ -117,7 +117,7 @@ object DemoData {
             else "QAR %.2f credited to your account: %s".format(t.amount, t.merchant)
             val tx = ParsedTransaction(t.amount, "QAR", t.merchant, t.dir, "4421", "com.qnb.mobile", raw, ts)
             val cat = if (t.dir == Direction.CREDIT) BudgetCategory.INCOME else app.pipeline.categorizer.categorize(tx).first
-            val point = TxPoint(normalizeMerchant(t.merchant), t.merchant, t.amount, "QAR", ts, cat, t.dir)
+            val point = TxPoint(normalizeMerchant(t.merchant), DISPLAY[t.merchant] ?: t.merchant, t.amount, "QAR", ts, cat, t.dir)
             val anomalies = SpendingInsights.anomalies(point, history)
             history += point
             db.transactions().insert(

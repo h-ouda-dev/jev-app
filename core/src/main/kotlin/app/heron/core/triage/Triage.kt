@@ -99,6 +99,7 @@ class TriageEngine(private val router: DecisionRouter) {
         if (text.containsAnyPhrase(PROMO_WORDS) || PERCENT_OFF.containsMatchIn(text)) r.add(s, 1.5f).add(d, 1f)
         if (text.containsAnyPhrase(NEWSY_WORDS)) r.add(d, 1.2f)
         if (text.containsAnyPhrase(MONEY_WORDS)) r.add(w, 1f)
+        if (text.containsAnyPhrase(LATER_WORDS)) r.add(w, 1.5f)
         if (e.isGroupConversation && !isVip) r.add(d, 1f)
         return r.toDecision()
     }
@@ -106,12 +107,14 @@ class TriageEngine(private val router: DecisionRouter) {
     companion object {
         const val QUESTION = "This notification is"
         /** How much the rules count next to the model (see Ensemble). */
-        const val RULES_WEIGHT = 1f
+        const val RULES_WEIGHT = 2f
         val URGENT_WORDS = listOf(
             "urgent", "asap", "emergency", "call me", "right now", "immediately", "help", "hospital",
             "accident", "missed call", "are you ok", "where are you", "now please", "flight delayed",
-            "gate change", "boarding", "fire alarm", "security alert",
+            "gate change", "boarding", "fire alarm", "security alert", "starts in", "starting now", "starting soon",
+            "is arriving", "arriving now", "at the door", "final call",
         )
+        val LATER_WORDS = listOf("shipped", "out for delivery", "arrives tomorrow", "has been delivered", "your order", "receipt", "reply when")
         val PROMO_WORDS = listOf(
             "sale", "deal", "offer", "discount", "coupon", "promo", "limited time", "don't miss",
             "free shipping", "unsubscribe", "new arrivals", "flash sale", "cashback", "win ", "exclusive",

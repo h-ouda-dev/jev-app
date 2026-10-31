@@ -133,7 +133,12 @@ fun MoneyScreen(vm: MainViewModel) {
                             modifier = Modifier.weight(1f),
                         )
                         Text(
-                            if (monthOffset == 0) "$daysLeft days to go · budget ${money(budget, cur, false)}" else "budget ${money(budget, cur, false)}",
+                            when {
+                                monthOffset != 0 -> "Budget ${money(budget, cur, false)}"
+                                daysLeft == 0 -> "Last day · budget ${money(budget, cur, false)}"
+                                daysLeft == 1 -> "1 day to go · budget ${money(budget, cur, false)}"
+                                else -> "$daysLeft days to go · budget ${money(budget, cur, false)}"
+                            },
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

@@ -51,6 +51,8 @@ class HeronPipeline(val router: DecisionRouter = DecisionRouter()) {
     /** Scam-check person-to-person messages, mail, and anything with a link; skip our own bank's confirmed transactions. */
     fun shouldScamCheck(event: NotificationEvent, tx: ParsedTransaction?): Boolean {
         if (event.text.isBlank()) return false
+        // A shop's own app promoting its own sale isn't a scam; scams arrive by message, mail or links.
+        if (event.category in setOf("promo", "social", "recommendation") && event.packageName !in TriageEngine.MESSAGING_APPS) return false
         val hasLink = LinkInspector.extract(event.fullText).isNotEmpty()
         val conversational = event.category in setOf("msg", "email", "social") || event.packageName in TriageEngine.MESSAGING_APPS
         return hasLink || conversational || (tx == null && event.text.length > 40)

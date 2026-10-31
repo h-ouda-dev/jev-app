@@ -69,8 +69,14 @@ class ScreenshotTest {
                     "QNB: Your card has been suspended due to unusual activity. Verify within 24 hours at qnb-secure-verify.com",
                 )
             }.use {
-                shell("input swipe 540 1700 540 700 300")
+                Thread.sleep(6_000) // the 8-question check runs on the model first
+                shell("input swipe 540 1700 540 1000 300")
                 capture("${mode}_20_shield_report")
+            }
+            launch { putExtra(MainActivity.EXTRA_TAB, "inbox") }.use {
+                Thread.sleep(1_500)
+                shell("input tap 600 940") // first row: opens the decision sheet
+                capture("${mode}_23_inbox_sheet")
             }
             launch { putExtra(MainActivity.EXTRA_TAB, "money") }.use {
                 shell("input swipe 540 1800 540 500 300")

@@ -183,7 +183,7 @@ private fun NotificationRow(r: NotificationRecord, onClick: () -> Unit) {
     val bucket = TriageBucket.valueOf(r.bucket)
     val verdict = r.scamVerdict?.let { ScamVerdict.valueOf(it) }?.takeIf { it != ScamVerdict.SAFE }
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 13.dp), verticalAlignment = Alignment.Top) {
-        AppIcon(r.packageName, r.appLabel, size = 44.dp, fallbackColor = bucketColor(bucket))
+        AppIcon(r.packageName, r.sender ?: r.appLabel, size = 44.dp, fallbackColor = bucketColor(bucket))
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -219,7 +219,7 @@ private fun DecisionSheet(r: NotificationRecord, onDismiss: () -> Unit, onTeach:
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp).navigationBarsPadding().padding(bottom = 16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                AppIcon(r.packageName, r.appLabel, size = 48.dp, fallbackColor = bucketColor(bucket))
+                AppIcon(r.packageName, r.sender ?: r.appLabel, size = 48.dp, fallbackColor = bucketColor(bucket))
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text(r.sender ?: r.title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)

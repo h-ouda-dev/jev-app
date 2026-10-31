@@ -221,7 +221,7 @@ fun TodayScreen(vm: MainViewModel, openTab: (Tab) -> Unit, openSettings: () -> U
                         ListRow(
                             title = r.sender ?: r.title,
                             subtitle = r.text,
-                            leading = { AppIcon(r.packageName, r.appLabel, fallbackColor = bucketColor(TriageBucket.URGENT)) },
+                            leading = { AppIcon(r.packageName, r.sender ?: r.appLabel, fallbackColor = bucketColor(TriageBucket.URGENT)) },
                             trailing = { Text(relativeTime(r.postedAt), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
                             onClick = { openTab(Tab.INBOX) },
                             subtitleMaxLines = 1,
@@ -294,7 +294,7 @@ fun TodayScreen(vm: MainViewModel, openTab: (Tab) -> Unit, openSettings: () -> U
                             val left = budget - spent
                             val daysLeft = month.lengthOfMonth() - LocalDate.now().dayOfMonth
                             Text(
-                                if (left >= 0) "${money(left, settings.currency, false)} left · $daysLeft days to go" else "${money(-left, settings.currency, false)} over budget",
+                                if (left >= 0) "${money(left, settings.currency, false)} left · " + when (daysLeft) { 0 -> "last day"; 1 -> "1 day to go"; else -> "$daysLeft days to go" } else "${money(-left, settings.currency, false)} over budget",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (left >= 0) MaterialTheme.colorScheme.onSurfaceVariant else Heron.colors.danger,
                             )

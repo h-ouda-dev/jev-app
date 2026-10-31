@@ -42,7 +42,7 @@ class Categorizer(private val router: DecisionRouter) {
     }
 
     companion object {
-        const val RULES_WEIGHT = 1f
+        const val RULES_WEIGHT = 2f
         val KEYWORDS: Map<BudgetCategory, List<String>> = mapOf(
             BudgetCategory.GROCERIES to listOf("carrefour", "lulu", "monoprix", "al meera", "megamart", "spinneys", "family food", "safari", "grand hypermarket", "supermarket", "hypermarket", "grocery", "walmart", "tesco", "aldi", "lidl", "kroger", "whole foods", "costco"),
             BudgetCategory.DINING to listOf("restaurant", "cafe", "coffee", "starbucks", "costa", "tim hortons", "mcdonald", "kfc", "burger", "pizza", "shawarma", "talabat", "snoonu", "deliveroo", "uber eats", "doordash", "careem food", "bakery", "grill"),

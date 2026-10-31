@@ -137,7 +137,7 @@ private fun Dots(count: Int, selected: Int) {
 @Composable
 private fun StoryPage(p: Page) {
     Column(
-        Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 28.dp).padding(top = 24.dp, bottom = 170.dp),
+        Modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 28.dp).padding(top = 24.dp, bottom = 196.dp),
     ) {
         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { p.art() }
         Spacer(Modifier.height(24.dp))

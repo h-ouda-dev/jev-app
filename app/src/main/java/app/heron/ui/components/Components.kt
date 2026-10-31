@@ -90,7 +90,7 @@ fun HeroCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() 
         Canvas(Modifier.matchParentSize()) {
             val stroke = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
             for (i in 0..2) {
-                val y = size.height - 18.dp.toPx() - i * 12.dp.toPx()
+                val y = 26.dp.toPx() + i * 12.dp.toPx()
                 val w = size.width * (0.55f - i * 0.12f)
                 drawLine(
                     Color(0xFF3FA7A3).copy(alpha = 0.35f - i * 0.1f),

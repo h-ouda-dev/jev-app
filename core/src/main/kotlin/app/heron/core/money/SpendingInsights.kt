@@ -38,22 +38,22 @@ object SpendingInsights {
         val sameMerchant = debits.filter { it.merchantKey == tx.merchantKey }
 
         sameMerchant.firstOrNull { abs(it.amount - tx.amount) < 0.01 && abs(it.timestamp - tx.timestamp) < 10 * 60_000L }?.let {
-            out += Anomaly(Anomaly.Kind.POSSIBLE_DUPLICATE, "Charged the same amount at ${tx.merchant} twice within 10 minutes")
+            out += Anomaly(Anomaly.Kind.POSSIBLE_DUPLICATE, "Charged twice within 10 minutes. Possible duplicate.")
         }
         if (sameMerchant.size >= 3) {
             val med = median(sameMerchant.map { it.amount })
             if (tx.amount > med * 2.5 && tx.amount - med > 20) {
-                out += Anomaly(Anomaly.Kind.UNUSUAL_AMOUNT, "%.2f %s at %s is %.1f× your usual %.2f".format(tx.amount, tx.currency, tx.merchant, tx.amount / med, med))
+                out += Anomaly(Anomaly.Kind.UNUSUAL_AMOUNT, "%.1f× your usual %s %.2f here.".format(tx.amount / med, tx.currency, med))
             }
         } else if (sameMerchant.isEmpty() && debits.size >= 10) {
             val p90 = percentile(debits.map { it.amount }, 0.9)
             if (tx.amount > p90 * 1.5) {
-                out += Anomaly(Anomaly.Kind.NEW_MERCHANT_LARGE, "First time at ${tx.merchant}, and larger than 90%% of your payments".replace("%%", "%"))
+                out += Anomaly(Anomaly.Kind.NEW_MERCHANT_LARGE, "First time here, and bigger than 90% of your payments.")
             }
         }
         val sub = detectSubscriptions(history + tx).firstOrNull { it.merchantKey == tx.merchantKey }
         if (sub?.priceIncreased == true && sub.lastCharged == tx.timestamp) {
-            out += Anomaly(Anomaly.Kind.PRICE_INCREASE, "${sub.displayName} subscription went up to %.2f %s".format(tx.amount, tx.currency))
+            out += Anomaly(Anomaly.Kind.PRICE_INCREASE, "Subscription price went up to %s %.2f.".format(tx.currency, tx.amount))
         }
         return out
     }
