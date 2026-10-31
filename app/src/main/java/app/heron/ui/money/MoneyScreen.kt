@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.heron.core.money.BudgetCategory
 import app.heron.core.money.Direction
+import app.heron.core.money.Fx
 import app.heron.data.TransactionRecord
 import app.heron.ui.MainViewModel
 import app.heron.ui.components.EmptyState
@@ -94,10 +95,14 @@ fun MoneyScreen(vm: MainViewModel, startImport: Boolean = false, onImportShown: 
     val month = YearMonth.now().minusMonths(monthOffset.toLong())
     val cur = settings.currency
     val inMonth = all.filter { YearMonth.from(Instant.ofEpochMilli(it.timestamp).atZone(zone)) == month }
-    val debits = inMonth.filter { it.direction == Direction.DEBIT.name && it.currency == cur }
-    val spent = debits.sumOf { it.amount }
-    val income = inMonth.filter { it.direction == Direction.CREDIT.name && it.currency == cur }.sumOf { it.amount }
-    val byCategory = debits.groupBy { it.category }.mapValues { e -> e.value.sumOf { it.amount } }.entries.sortedByDescending { it.value }
+    // Everything is totalled in the home currency; foreign amounts are converted (pegs are exact).
+    val convertible = inMonth.filter { Fx.supports(it.currency) }
+    val debits = convertible.filter { it.direction == Direction.DEBIT.name }
+    val spent = debits.sumOf { it.inHome(cur) }
+    val income = convertible.filter { it.direction == Direction.CREDIT.name }.sumOf { it.inHome(cur) }
+    val byCategory = debits.groupBy { it.category }.mapValues { e -> e.value.sumOf { it.inHome(cur) } }.entries.sortedByDescending { it.value }
+    val foreign = inMonth.map { it.currency }.filter { it != cur }.distinct()
+    val unknown = inMonth.count { !Fx.supports(it.currency) }
     val flagged = inMonth.filter { it.anomalies.isNotBlank() }
     val days = inMonth.groupBy { dayLabel(it.timestamp) }
 
@@ -160,6 +165,10 @@ fun MoneyScreen(vm: MainViewModel, startImport: Boolean = false, onImportShown: 
                     Spacer(Modifier.height(14.dp))
                     Text("Income ${money(income, cur, false)}", style = MaterialTheme.typography.labelLarge, color = Heron.colors.safe)
                 }
+                if (foreign.isNotEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(fxNote(foreign.filter { Fx.supports(it) }, cur, unknown), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
 
@@ -210,7 +219,7 @@ fun MoneyScreen(vm: MainViewModel, startImport: Boolean = false, onImportShown: 
 
         if (subs.isNotEmpty()) {
             item {
-                val yearly = subs.filter { it.currency == cur }.sumOf { it.yearlyCost }
+                val yearly = subs.sumOf { s -> Fx.convert(s.yearlyCost, s.currency, cur) ?: 0.0 }
                 SectionHeader("Subscriptions")
                 HeronCard(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)) {
                     Row(Modifier.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -262,7 +271,7 @@ fun MoneyScreen(vm: MainViewModel, startImport: Boolean = false, onImportShown: 
                 HeronCard(Modifier.padding(bottom = 8.dp), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp)) {
                     rows.forEachIndexed { i, t ->
                         if (i > 0) HorizontalDivider(Modifier.padding(start = 54.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-                        TransactionRow(t) { editing = t }
+                        TransactionRow(t, cur) { editing = t }
                     }
                 }
             }
@@ -275,7 +284,7 @@ fun MoneyScreen(vm: MainViewModel, startImport: Boolean = false, onImportShown: 
 }
 
 @Composable
-private fun TransactionRow(t: TransactionRecord, onClick: () -> Unit) {
+private fun TransactionRow(t: TransactionRecord, home: String, onClick: () -> Unit) {
     val credit = t.direction == Direction.CREDIT.name
     val c = cat(t.category)
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -292,6 +301,14 @@ private fun TransactionRow(t: TransactionRecord, onClick: () -> Unit) {
                 style = MaterialTheme.typography.titleSmall,
                 color = if (credit) Heron.colors.safe else MaterialTheme.colorScheme.onSurface,
             )
+            if (t.currency != home) {
+                Fx.convert(t.amount, t.currency, home)?.let { v ->
+                    Text(
+                        (if (Fx.isExact(t.currency, home)) "= " else "≈ ") + money(v, home),
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             if (t.anomalies.isNotBlank()) Text("Check", style = MaterialTheme.typography.labelSmall, color = Heron.colors.caution)
         }
     }
@@ -336,6 +353,18 @@ private fun CategorySheet(t: TransactionRecord, onDismiss: () -> Unit, onPick: (
             TextButton(onClick = onDelete) { Text("This isn't a transaction", color = Heron.colors.danger) }
         }
     }
+}
+
+/** Amount in the home currency (foreign currencies converted; unknown ones count as 0). */
+fun TransactionRecord.inHome(home: String): Double = Fx.convert(amount, currency, home) ?: 0.0
+
+private fun fxNote(currencies: List<String>, home: String, unknown: Int): String {
+    val parts = currencies.map { c ->
+        val rate = Fx.convert(1.0, c, home) ?: 0.0
+        (if (Fx.isExact(c, home)) "1 $c = " else "1 $c ≈ ") + "%.4g".format(rate) + " $home"
+    }
+    val base = if (parts.isEmpty()) "" else "Converted to $home: " + parts.joinToString(" · ") + "."
+    return if (unknown > 0) "$base $unknown in other currencies not included.".trim() else base
 }
 
 private fun shortDate(ms: Long): String =

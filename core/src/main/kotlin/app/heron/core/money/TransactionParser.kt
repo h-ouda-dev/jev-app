@@ -22,7 +22,8 @@ object TransactionParser {
 
     private val DEBIT_WORDS = listOf(
         "spent", "debited", "purchase", "paid", "payment of", "used for", "used at", "withdrawn", "withdrawal",
-        "charged", "deducted", "pos", "transaction of", "sent", "transfer to",
+        "charged", "deducted", "pos", "transaction of", "sent", "transfer to", "transaction", "txn", "trx",
+        "online payment", "atm", "e-commerce", "card was used", "has been used",
     )
     private val CREDIT_WORDS = listOf(
         "credited", "received", "deposit", "deposited", "refund", "refunded", "salary", "reversal", "cashback credited",
@@ -30,6 +31,13 @@ object TransactionParser {
     private val REJECT_WORDS = listOf(
         "otp", "one time password", "one-time password", "verification code", "do not share", "offer", "discount",
         "% off", "win", "get up to", "earn up to", "promo", "limited time", "apply now", "pre-approved", "due date", "minimum due",
+        // Marketing from banks and card apps: invitations to spend, not spending.
+        "spend", "shop now", "enjoy", "benefits", "eligible", "upgrade", "avail", "unlock", "chance to", "terms apply",
+        "t&c", "t&cs", "exclusive", "privileges", "invite", "invitation",
+    )
+    private val MERCHANT_STOP = setOf(
+        "your", "you", "the", "card", "account", "enjoy", "get", "earn", "receive", "win", "use", "avail", "claim", "unlock",
+        "redeem", "start", "continue", "pay", "shop", "save", "book", "be", "a", "an",
     )
 
     private val PERCENT_OFF = Regex("""\d+\s?%\s?(off|cashback|discount)""")
@@ -43,8 +51,9 @@ object TransactionParser {
         if (t.containsAnyPhrase(REJECT_WORDS) || PERCENT_OFF.containsMatchIn(t)) return null
         val isDebit = t.containsAnyPhrase(DEBIT_WORDS)
         val isCredit = t.containsAnyPhrase(CREDIT_WORDS)
-        val financeApp = FINANCE_APP_HINTS.any { sourcePackage.lowercase().contains(it) }
-        if (!isDebit && !isCredit && !financeApp) return null
+        // A bank app alone isn't enough: bank apps also push marketing with amounts in it.
+        // Real alerts always say what happened (spent, debited, purchase, credited, transaction…).
+        if (!isDebit && !isCredit) return null
 
         val (amount, currency) = amount(text) ?: return null
         if (amount <= 0.0) return null
@@ -77,7 +86,7 @@ object TransactionParser {
         .map { it.groupValues[1].trim().trimEnd('.', '-') }
         .firstOrNull { cand ->
             cand.length >= 2 && cand.any { it.isLetter() } &&
-                !AMOUNT_BEFORE.matches(cand) && cand.lowercase() !in setOf("your", "you", "the", "card", "account")
+                !AMOUNT_BEFORE.matches(cand) && cand.lowercase().substringBefore(' ') !in MERCHANT_STOP
         }
 
     private fun String.indexOfFirstOf(words: List<String>) = words.mapNotNull { w -> indexOf(w).takeIf { it >= 0 } }.minOrNull() ?: Int.MAX_VALUE

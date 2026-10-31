@@ -56,6 +56,7 @@ import app.heron.ml.ModelState
 import app.heron.ui.MainViewModel
 import app.heron.ui.Tab
 import app.heron.ui.components.AppIcon
+import app.heron.ui.money.inHome
 import app.heron.ui.components.HeroCard
 import app.heron.ui.components.HeronCard
 import app.heron.ui.components.IconBadge
@@ -102,10 +103,10 @@ fun TodayScreen(vm: MainViewModel, openTab: (Tab) -> Unit, openSettings: () -> U
 
     val zone = ZoneId.systemDefault()
     val month = YearMonth.now()
-    val monthTx = txs.filter { YearMonth.from(java.time.Instant.ofEpochMilli(it.timestamp).atZone(zone)) == month && it.currency == settings.currency }
-    val spent = monthTx.filter { it.direction == Direction.DEBIT.name }.sumOf { it.amount }
+    val monthTx = txs.filter { YearMonth.from(java.time.Instant.ofEpochMilli(it.timestamp).atZone(zone)) == month }
+    val spent = monthTx.filter { it.direction == Direction.DEBIT.name }.sumOf { it.inHome(settings.currency) }
     val topCats = monthTx.filter { it.direction == Direction.DEBIT.name }.groupBy { it.category }
-        .mapValues { e -> e.value.sumOf { it.amount } }.entries.sortedByDescending { it.value }.take(3)
+        .mapValues { e -> e.value.sumOf { it.inHome(settings.currency) } }.entries.sortedByDescending { it.value }.take(3)
     val flags = monthTx.count { it.anomalies.isNotBlank() }
 
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 8.dp)) {

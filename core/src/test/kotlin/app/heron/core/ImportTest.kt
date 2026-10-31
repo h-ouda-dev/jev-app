@@ -89,3 +89,26 @@ class ImportTest {
         assertEquals(-5.0, StatementCsv.parseAmount("-5")!!, 1e-9)
     }
 }
+
+class FxAndPromoTest {
+    @Test fun peggedConversionIsExact() {
+        assertEquals(91.0, app.heron.core.money.Fx.convert(25.0, "USD", "QAR")!!, 1e-9)
+        assertTrue(app.heron.core.money.Fx.isExact("USD", "QAR"))
+        assertTrue(!app.heron.core.money.Fx.isExact("EUR", "QAR"))
+        assertEquals(null, app.heron.core.money.Fx.convert(10.0, "XYZ", "QAR"))
+    }
+
+    @Test fun bankAppMarketingIsNotATransaction() {
+        val p = app.heron.core.money.TransactionParser
+        listOf(
+            "Spend USD 25 with your QNB card to enjoy unique benefits",
+            "Use your card abroad and pay USD 25 to enjoy unique benefits",
+            "Upgrade to Platinum: exclusive privileges on purchases over QAR 500",
+            "QAR 100 reward when you shop with Visa. T&Cs apply",
+        ).forEach { assertEquals("Should reject: $it", null, p.parse(it, "com.qnb.mobile", 0)) }
+        val real = p.parse("Purchase of USD 25.00 at AMAZON.COM with card ending 4421", "com.qnb.mobile", 0)!!
+        assertEquals("USD", real.currency)
+        assertEquals("amazon", real.merchantKey)
+        assertTrue(p.parse("Transaction of QAR 61.25 at UBER TRIP on card ending 4421", "com.qnb.mobile", 0) != null)
+    }
+}
