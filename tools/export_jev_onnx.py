@@ -61,6 +61,63 @@ REFERENCE_PAIRS = [
 ]
 
 
+def build_quantized_variants(fp32, out_dir):
+    """Candidate smaller models. Which one ships is decided by measured agreement, not by hope."""
+    import onnx
+    from onnxruntime.quantization import QuantType, quantize_dynamic
+    variants = {}
+    try:
+        # Weight-only 4-bit blocks (MatMulNBits); activations stay fp32, so results
+        # don't depend on input statistics.
+        from onnxruntime.quantization.matmul_4bits_quantizer import MatMul4BitsQuantizer
+        q = MatMul4BitsQuantizer(onnx.load(fp32), block_size=32, is_symmetric=True)
+        q.process()
+        path = os.path.join(out_dir, "model_int4.onnx")
+        q.model.save_model_to_file(path, use_external_data_format=False)
+        variants["int4-weights"] = path
+    except Exception as e:  # keep going with the other variants
+        print("int4 variant failed:", repr(e))
+    path = os.path.join(out_dir, "model_int8.onnx")
+    quantize_dynamic(fp32, path, weight_type=QuantType.QInt8)
+    variants["int8-dynamic"] = path
+    return variants
+
+
+def decide(sess, tok, premise, hypotheses, kind, score_index, contradiction_index):
+    import numpy as np
+    rows = []
+    for h in hypotheses:
+        e = tok(premise, h, return_tensors="np")
+        rows.append(sess.run(None, {"input_ids": e["input_ids"].astype(np.int64),
+                                    "attention_mask": e["attention_mask"].astype(np.int64)})[0][0])
+    if kind == "binary":
+        return 0 if rows[0][score_index] >= rows[0][contradiction_index] else 1
+    logp = [r[score_index] - np.log(np.exp(r - r.max()).sum()) - r.max() for r in rows]
+    return int(np.argmax(logp))
+
+
+def choose_variant(variants, tok, min_agreement, score_index, contradiction_index):
+    """Smallest variant whose decisions on the app's self-test match fp32 often enough."""
+    import onnxruntime as ort
+    eval_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "eval_decisions.json")
+    decisions = json.load(open(eval_path))
+    reference = None
+    results = {}
+    for name in ["fp32"] + [n for n in variants if n != "fp32"]:
+        sess = ort.InferenceSession(variants[name])
+        got = [decide(sess, tok, d["premise"], d["hypotheses"], d["kind"], score_index, contradiction_index) for d in decisions]
+        if reference is None:
+            reference = got
+        agree = sum(a == b for a, b in zip(got, reference)) / len(reference)
+        size = os.path.getsize(variants[name]) / 1e6
+        results[name] = (agree, size)
+        print(f"variant {name:13s} size {size:7.1f} MB  agrees with fp32 on {agree * 100:5.1f}% of {len(reference)} self-test decisions")
+    ok = [n for n, (agree, _) in results.items() if agree >= min_agreement]
+    chosen = min(ok, key=lambda n: results[n][1])
+    print(f"CHOSEN VARIANT: {chosen}")
+    return chosen
+
+
 def consistency_report(tok, model, fp32_path, final_path):
     """Does padding (batching several choices) or int8 quantisation change the answer?"""
     import numpy as np
@@ -132,6 +189,8 @@ def main():
     ap.add_argument("--no-quantize", action="store_true")
     ap.add_argument("--trust-remote-code", action="store_true")
     ap.add_argument("--version", default="model-v1", help="Release tag the app downloads from")
+    ap.add_argument("--min-agreement", type=float, default=0.97,
+                    help="A smaller variant ships only if it makes the same decision as fp32 this often")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -157,16 +216,16 @@ def main():
     )
 
     final = os.path.join(args.out, "model.onnx")
-    if args.no_quantize:
-        shutil.copy(fp32, final)
-    else:
-        from onnxruntime.quantization import QuantType, quantize_dynamic
-        # Per-channel weights keep accuracy much closer to fp32. Activations are
-        # quantised dynamically per tensor, so the app scores one pair per run
-        # (padding other rows into a batch would shift the scales).
-        quantize_dynamic(fp32, final, weight_type=QuantType.QInt8, per_channel=True)
+    variants = {"fp32": fp32}
+    if not args.no_quantize:
+        variants.update(build_quantized_variants(fp32, args.out))
+    labels = getattr(model.config, "id2label", {0: "label_0"})
+    chosen = choose_variant(variants, tok, args.min_agreement, pick_score_index(labels), pick_contradiction_index(labels))
+    shutil.copy(variants[chosen], final)
     consistency_report(tok, model, fp32, final)
-    os.remove(fp32)
+    for path in variants.values():
+        if os.path.exists(path):
+            os.remove(path)
 
     tok.save_pretrained(args.out)  # writes tokenizer.json
     for extra in os.listdir(args.out):
@@ -201,6 +260,7 @@ def main():
     manifest = write_manifest(args.out, args.model, args.version)
     print(json.dumps(manifest, indent=2))
     print("Wrote", args.out, "->", sorted(os.listdir(args.out)))
+    print("model.onnx size:", os.path.getsize(final) / 1e6, "MB")
 
 
 if __name__ == "__main__":
