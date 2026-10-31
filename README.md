@@ -68,7 +68,7 @@ tools/export_jev_onnx.py  Exports a ModernBERT decision model to ONNX for the ap
 Jev works with built-in rules out of the box. To switch on the model:
 
 ```bash
-pip install "torch>=2.3" "transformers>=4.48" onnx onnxruntime
+pip install -r tools/requirements.txt
 # A ModernBERT-base NLI cross-encoder (149M params) works as a zero-shot decision model today:
 python tools/export_jev_onnx.py --model tasksource/ModernBERT-base-nli --out jev-model
 # Or try a JEV checkpoint, if it exposes a sequence-classification head:

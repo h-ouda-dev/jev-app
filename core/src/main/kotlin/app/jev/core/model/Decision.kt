@@ -8,6 +8,12 @@ data class DecisionRequest(
     val state: String,
     val question: String,
     val choices: List<String>,
+    /**
+     * Optional declarative form of a yes/no question ("This message asks for a
+     * payment."). NLI-style models judge a statement better than a question:
+     * P(yes) = entailment vs contradiction of this one statement.
+     */
+    val statement: String? = null,
 ) {
     init {
         require(choices.size >= 2) { "A decision needs at least two choices" }

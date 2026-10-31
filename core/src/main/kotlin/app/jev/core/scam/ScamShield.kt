@@ -9,15 +9,23 @@ import app.jev.core.text.matchedPhrases
 import app.jev.core.text.norm
 
 /** One yes/no question on the red-flag checklist. */
-enum class RedFlag(val title: String, val question: String, val weight: Float) {
-    URGENCY("Creates urgency or pressure", "Does this message pressure the reader to act immediately?", 1.0f),
-    PAYMENT("Asks for money or payment", "Does this message ask the reader to pay, send money, buy gift cards or transfer crypto?", 1.4f),
-    CODE_OR_PASSWORD("Asks for a code or password", "Does this message ask the reader to share a password, PIN or verification code?", 2.0f),
-    IMPERSONATION("Pretends to be a bank, courier or official body", "Does this message claim to come from a bank, delivery company, government agency or well-known brand?", 1.2f),
-    SUSPICIOUS_LINK("Contains a suspicious link", "Does this message contain a suspicious link?", 1.5f),
-    TOO_GOOD("Prize, refund or too good to be true", "Does this message promise a prize, refund, free money or a deal that is too good to be true?", 1.2f),
-    THREAT("Threatens a penalty", "Does this message threaten account suspension, a fine, legal action or arrest?", 1.2f),
-    MOVE_CHANNEL("Asks to move to another app or number", "Does this message ask the reader to continue on another app, phone number or website?", 0.8f),
+enum class RedFlag(val title: String, val question: String, val statement: String, val weight: Float) {
+    URGENCY("Creates urgency or pressure", "Does this message pressure the reader to act immediately?",
+        "This message pressures the reader to act immediately.", 1.0f),
+    PAYMENT("Asks for money or payment", "Does this message ask the reader to pay, send money, buy gift cards or transfer crypto?",
+        "This message asks the reader to pay or send money.", 1.4f),
+    CODE_OR_PASSWORD("Asks for a code or password", "Does this message ask the reader to share a password, PIN or verification code?",
+        "This message asks the reader to share a password, PIN or verification code.", 2.0f),
+    IMPERSONATION("Pretends to be a bank, courier or official body", "Does this message claim to come from a bank, delivery company, government agency or well-known brand?",
+        "This message claims to come from a bank, delivery company, government agency or big company.", 1.2f),
+    SUSPICIOUS_LINK("Contains a suspicious link", "Does this message contain a suspicious link?",
+        "This message contains a suspicious link.", 1.5f),
+    TOO_GOOD("Prize, refund or too good to be true", "Does this message promise a prize, refund, free money or a deal that is too good to be true?",
+        "This message promises a prize, refund or free money.", 1.2f),
+    THREAT("Threatens a penalty", "Does this message threaten account suspension, a fine, legal action or arrest?",
+        "This message threatens account suspension, a fine, legal action or arrest.", 1.2f),
+    MOVE_CHANNEL("Asks to move to another app or number", "Does this message ask the reader to continue on another app, phone number or website?",
+        "This message asks the reader to contact someone on another app, phone number or website.", 0.8f),
 }
 
 data class FlagCheck(val flag: RedFlag, val raised: Boolean, val probability: Float, val evidence: List<String>)
@@ -44,9 +52,8 @@ class ScamShield(private val router: DecisionRouter) {
     /** [sourcePackage] lets us avoid flagging a brand's own app as "impersonating" itself. */
     fun check(text: String, sourcePackage: String? = null, senderIsKnownContact: Boolean = false): ScamReport {
         val links = LinkInspector.inspect(text)
-        val state = "Message: " + compact(text, 500)
         val checks = RedFlag.entries.map { flag ->
-            val request = DecisionRequest(state, flag.question, YES_NO)
+            val request = request(text, flag)
             val evidence = evidence(flag, text, links, sourcePackage)
             val decision = when (flag) {
                 // Link analysis is deterministic and better than any language model guess.
@@ -70,6 +77,9 @@ class ScamShield(private val router: DecisionRouter) {
         }
         return ScamReport(text, checks, links, risk, verdict)
     }
+
+    fun request(text: String, flag: RedFlag) =
+        DecisionRequest("Message: " + compact(text, 500), flag.question, YES_NO, statement = flag.statement)
 
     private fun evidence(flag: RedFlag, text: String, links: List<LinkFinding>, pkg: String?): List<String> {
         val t = text.norm()

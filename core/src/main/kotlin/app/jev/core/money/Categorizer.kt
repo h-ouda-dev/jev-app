@@ -18,15 +18,16 @@ class Categorizer(private val router: DecisionRouter) {
         if (tx.direction == Direction.CREDIT) {
             return BudgetCategory.INCOME to Decision(BudgetCategory.INCOME.choice, 1f, mapOf(BudgetCategory.INCOME.choice to 1f), DecisionSource.RULES)
         }
-        val choices = BudgetCategory.entries.filter { it != BudgetCategory.INCOME }.map { it.choice }
-        val request = DecisionRequest(
-            state = "Card payment of ${"%.2f".format(tx.amount)} ${tx.currency} at ${tx.merchant}. Bank message: ${compact(tx.rawText, 300)}",
-            question = "This purchase is for",
-            choices = choices,
-        )
-        val decision = router.decide(request) { rules(tx, choices) }
+        val request = request(tx)
+        val decision = router.decide(request) { rules(tx, request.choices) }
         return BudgetCategory.fromChoice(decision.choice) to decision
     }
+
+    fun request(tx: ParsedTransaction) = DecisionRequest(
+        state = "Card payment of ${"%.2f".format(java.util.Locale.ROOT, tx.amount)} ${tx.currency} at ${tx.merchant}. Bank message: ${compact(tx.rawText, 300)}",
+        question = "This purchase is for",
+        choices = BudgetCategory.entries.filter { it != BudgetCategory.INCOME }.map { it.choice },
+    )
 
     fun rules(tx: ParsedTransaction, choices: List<String>): Decision {
         val r = ScoredRules(choices).add(BudgetCategory.OTHER.choice, 0.5f)

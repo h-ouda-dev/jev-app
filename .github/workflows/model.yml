@@ -1,0 +1,84 @@
+name: Build & publish model
+
+# Exports the on-device model, verifies it against the app's own Kotlin code,
+# and publishes it as a GitHub Release the app downloads from.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tools/**"
+      - "core/**"
+      - ".github/workflows/model.yml"
+
+permissions:
+  contents: write
+
+env:
+  MODEL_TAG: model-v1
+  SOURCE_MODEL: tasksource/ModernBERT-base-nli
+
+jobs:
+  model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: tools/requirements.txt
+
+      - name: Install export tools
+        run: pip install -r tools/requirements.txt
+
+      - name: Inspect ModernBERT-JEV (informational)
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          from huggingface_hub import hf_hub_download, list_repo_files
+          repo = "tasksource/modernbert-tasksource-jev"
+          print("files:", list_repo_files(repo))
+          for f in ("config.json", "README.md"):
+              try:
+                  print(f"===== {f} =====")
+                  print(open(hf_hub_download(repo, f)).read()[:6000])
+              except Exception as e:
+                  print(f, "->", e)
+          PY
+
+      - name: Export ${{ env.SOURCE_MODEL }} to ONNX (int8)
+        run: python tools/export_jev_onnx.py --model "$SOURCE_MODEL" --out dist --version "$MODEL_TAG"
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Verify model with the app's Kotlin code (tokenizer, logits, self-test)
+        env:
+          JEV_MODEL_DIR: ${{ github.workspace }}/dist
+        run: ./gradlew :core:test --tests 'app.jev.core.RealModelTest' --stacktrace
+
+      - name: Publish release ${{ env.MODEL_TAG }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          FILES="dist/model.onnx dist/tokenizer.json dist/jev_config.json dist/manifest.json"
+          if gh release view "$MODEL_TAG" >/dev/null 2>&1; then
+            gh release upload "$MODEL_TAG" $FILES --clobber
+          else
+            gh release create "$MODEL_TAG" $FILES --prerelease \
+              --title "Jev on-device model ($SOURCE_MODEL, int8 ONNX)" \
+              --notes "Downloaded by the Jev app from Settings. Built from $SOURCE_MODEL by .github/workflows/model.yml at $GITHUB_SHA."
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jev-model
+          path: dist/
+          if-no-files-found: ignore

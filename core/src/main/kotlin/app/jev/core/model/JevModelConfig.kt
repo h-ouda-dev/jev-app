@@ -19,6 +19,8 @@ data class JevModelConfig(
     val hypothesisTemplate: String = "{question} {choice}",
     /** Output class whose logit is used as the per-choice score; -1 = single-logit model. */
     val scoreIndex: Int = 0,
+    /** Class meaning "the statement is false"; enables single-pass yes/no decisions. -1 = none. */
+    val contradictionIndex: Int = -1,
     /** If true, use log-softmax over the classes (e.g. log P(entailment)) rather than the raw logit. */
     val useLogProb: Boolean = true,
     val maxLength: Int = 256,
@@ -39,6 +41,7 @@ data class JevModelConfig(
                 premiseTemplate = m["premise_template"] as? String ?: d.premiseTemplate,
                 hypothesisTemplate = m["hypothesis_template"] as? String ?: d.hypothesisTemplate,
                 scoreIndex = (m["score_index"] as? Number)?.toInt() ?: d.scoreIndex,
+                contradictionIndex = (m["contradiction_index"] as? Number)?.toInt() ?: d.contradictionIndex,
                 useLogProb = m["use_log_prob"] as? Boolean ?: d.useLogProb,
                 maxLength = (m["max_length"] as? Number)?.toInt() ?: d.maxLength,
                 temperature = (m["temperature"] as? Number)?.toFloat() ?: d.temperature,
@@ -57,6 +60,13 @@ class PairScoringDecisionModel(
     private val forward: (pairs: List<Pair<String, String>>, maxLength: Int) -> Array<FloatArray>,
 ) : DecisionModel {
     override fun decide(request: DecisionRequest): Decision {
+        val statement = request.statement
+        if (statement != null && request.choices.size == 2 && config.contradictionIndex >= 0) {
+            // One forward pass: entailment means choices[0] ("yes"), contradiction means choices[1].
+            val logits = forward(listOf(request.state to statement), config.maxLength).single()
+            val yesNo = floatArrayOf(logits[config.scoreIndex], logits[config.contradictionIndex])
+            return Decision.fromLogits(request.choices, yesNo, DecisionSource.MODEL, config.temperature)
+        }
         val pairs = request.choices.map { config.premise(request, it) to config.hypothesis(request, it) }
         val outputs = forward(pairs, config.maxLength)
         require(outputs.size == request.choices.size) { "Model returned ${outputs.size} rows for ${request.choices.size} choices" }

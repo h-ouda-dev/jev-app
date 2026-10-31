@@ -39,11 +39,7 @@ class TriageEngine(private val router: DecisionRouter) {
         prefs.appRules[event.packageName]?.let { return fixed(it, "You set this for ${event.appLabel}") }
 
         val isVip = isVip(event, prefs)
-        val request = DecisionRequest(
-            state = event.describe() + if (isVip) " The sender is one of my important contacts." else "",
-            question = "This notification is",
-            choices = TriageBucket.entries.map { it.choice },
-        )
+        val request = request(event, isVip)
         val decision = router.decide(request) { rules(event, isVip) }
         val bucket = TriageBucket.fromChoice(decision.choice)
         // A VIP should never be silenced by a model guess.
@@ -55,6 +51,12 @@ class TriageEngine(private val router: DecisionRouter) {
         }
         return TriageResult(safeBucket, decision, reason)
     }
+
+    fun request(event: NotificationEvent, isVip: Boolean) = DecisionRequest(
+        state = event.describe() + if (isVip) " The sender is one of my important contacts." else "",
+        question = QUESTION,
+        choices = TriageBucket.entries.map { it.choice },
+    )
 
     private fun fixed(bucket: TriageBucket, reason: String): TriageResult {
         val probs = TriageBucket.entries.associate { it.choice to if (it == bucket) 1f else 0f }
@@ -101,6 +103,7 @@ class TriageEngine(private val router: DecisionRouter) {
     }
 
     companion object {
+        const val QUESTION = "This notification is"
         val URGENT_WORDS = listOf(
             "urgent", "asap", "emergency", "call me", "right now", "immediately", "help", "hospital",
             "accident", "missed call", "are you ok", "where are you", "now please", "flight delayed",

@@ -15,4 +15,21 @@ kotlin {
 
 dependencies {
     testImplementation(libs.junit)
+    // Desktop build of the same ONNX Runtime Java API the Android app uses,
+    // so the real model can be tested end to end on the JVM.
+    testImplementation(libs.onnxruntime.jvm)
+}
+
+tasks.test {
+    // Point at an exported model folder to run RealModelTest; skipped otherwise.
+    System.getenv("JEV_MODEL_DIR")?.let {
+        environment("JEV_MODEL_DIR", it)
+        inputs.property("jevModelDir", it)
+        inputs.dir(it)
+    }
+    testLogging {
+        showStandardStreams = true
+        events("passed", "skipped", "failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
 }
