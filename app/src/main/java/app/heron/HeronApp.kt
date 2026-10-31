@@ -4,7 +4,11 @@ import android.app.Application
 import android.util.Log
 import androidx.work.ExistingWorkPolicy
 import app.heron.core.HeronPipeline
+import app.heron.core.money.BudgetCategory
+import app.heron.core.money.Direction
+import app.heron.core.money.ParsedTransaction
 import app.heron.core.money.TransactionParser
+import app.heron.data.MerchantRule
 import app.heron.core.model.DecisionRouter
 import app.heron.data.AppDatabase
 import app.heron.data.HistoryImportManager
@@ -43,22 +47,50 @@ class HeronApp : Application() {
 }
 
 /**
- * After an update that makes the transaction parser stricter, entries it no
- * longer accepts (e.g. bank marketing that slipped through) are removed once.
- * Statement imports are left alone: they come from the user's own file.
+ * When the transaction parser or merchant directory improves, stored
+ * transactions are re-read once: entries that are no longer transactions are
+ * removed, merchant names are re-extracted and categories recomputed. Your own
+ * category choices always win and follow the merchant to its new name.
+ * Statement imports keep their merchant (it came from your own file) but are
+ * re-categorised.
  */
 private suspend fun HeronApp.revalidateTransactions() {
     val prefs = getSharedPreferences("heron_maintenance", android.content.Context.MODE_PRIVATE)
     if (prefs.getInt("parser_version", 0) >= PARSER_VERSION) return
     val dao = db.transactions()
-    dao.since(0).filter { r ->
-        !r.sourcePackage.startsWith("statement:") &&
-            TransactionParser.parse(r.rawText, r.sourcePackage, r.timestamp) == null
-    }.forEach { dao.delete(it.id) }
+    val learned = db.rules().merchantRules().associate { it.merchantKey to BudgetCategory.valueOf(it.category) }.toMutableMap()
+    val cache = HashMap<String, Pair<BudgetCategory, Float>>()
+    for (r in dao.since(0)) {
+        val fromStatement = r.sourcePackage.startsWith("statement:")
+        val parsed = if (fromStatement) null else TransactionParser.parse(r.rawText, r.sourcePackage, r.timestamp)
+        if (!fromStatement && parsed == null) {
+            dao.delete(r.id)
+            continue
+        }
+        val merchant = parsed?.merchant ?: r.merchant
+        val key = parsed?.merchantKey ?: r.merchantKey
+        val userCat = learned[r.merchantKey] ?: learned[key]
+        if (userCat != null && key != r.merchantKey && learned[key] == null) {
+            db.rules().upsertMerchant(MerchantRule(key, userCat.name))
+            learned[key] = userCat
+        }
+        val (cat, conf) = when {
+            userCat != null -> userCat to 1f
+            r.direction == Direction.CREDIT.name -> BudgetCategory.INCOME to 1f
+            else -> cache.getOrPut(key) {
+                val tx = parsed ?: ParsedTransaction(r.amount, r.currency, r.merchant, Direction.DEBIT, r.cardHint, r.sourcePackage, r.rawText, r.timestamp)
+                val (c, d) = pipeline.categorizer.categorize(tx, learned)
+                c to d.confidence
+            }
+        }
+        if (merchant != r.merchant || key != r.merchantKey || cat.name != r.category) {
+            dao.update(r.copy(merchant = merchant, merchantKey = key, category = cat.name, confidence = conf))
+        }
+    }
     prefs.edit().putInt("parser_version", PARSER_VERSION).apply()
 }
 
-/** Bump when the parser gets stricter, to clean previously stored false positives. */
-private const val PARSER_VERSION = 2
+/** Bump when parsing or categorisation improves, to refresh stored transactions once. */
+private const val PARSER_VERSION = 3
 
 val android.content.Context.heron: HeronApp get() = applicationContext as HeronApp

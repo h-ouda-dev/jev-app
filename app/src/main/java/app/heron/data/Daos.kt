@@ -57,6 +57,9 @@ interface TransactionDao {
     @Query("SELECT COUNT(*) FROM transactions WHERE rawText = :raw AND timestamp > :since")
     suspend fun countDuplicates(raw: String, since: Long): Int
 
+    @androidx.room.Update
+    suspend fun update(t: TransactionRecord)
+
     @Query("UPDATE transactions SET category = :category, confidence = 1 WHERE merchantKey = :merchantKey")
     suspend fun recategorize(merchantKey: String, category: String)
 

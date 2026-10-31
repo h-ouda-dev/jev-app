@@ -80,7 +80,7 @@ class FeatureTest {
         assertNotNull(a)
         assertEquals(245.50, a!!.amount, 1e-9)
         assertEquals("QAR", a.currency)
-        assertEquals("CARREFOUR CITY CENTER", a.merchant)
+        assertEquals("Carrefour City Center", a.merchant)
         assertEquals("1234", a.cardHint)
         assertEquals(Direction.DEBIT, a.direction)
 

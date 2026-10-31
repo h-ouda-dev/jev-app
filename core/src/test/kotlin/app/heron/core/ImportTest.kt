@@ -112,3 +112,30 @@ class FxAndPromoTest {
         assertTrue(p.parse("Transaction of QAR 61.25 at UBER TRIP on card ending 4421", "com.qnb.mobile", 0) != null)
     }
 }
+
+class GccMerchantTest {
+    private val p = app.heron.core.money.TransactionParser
+    private val cat = HeronPipeline().categorizer
+
+    private fun check(sms: String, merchant: String, category: app.heron.core.money.BudgetCategory) {
+        val tx = p.parse(sms, "sms:QNB", 0) ?: throw AssertionError("Not parsed: $sms")
+        assertEquals("merchant for: $sms", merchant, tx.merchant)
+        assertEquals("category for: $sms", category, cat.categorize(tx).first)
+    }
+
+    @Test fun labelledLocationFormats() {
+        check("Your Credit Card XXXX1234 was used for QAR 45.00 on 31/10/2026 13:45. Location: \"TALABAT DOHA QA\". Available limit QAR 9,955.00", "Talabat", app.heron.core.money.BudgetCategory.DINING)
+        check("Purchase transaction\nAmount: QAR 120.50\nLocation: WOQOD STATION 12 DOHA\nCard: ****1234", "Woqod Station", app.heron.core.money.BudgetCategory.TRANSPORT)
+        check("QAR 230.75 spent on card ending 1234. Location: \"TALABAT MART\"", "Talabat Mart", app.heron.core.money.BudgetCategory.GROCERIES)
+        check("Purchase of QAR 88.00 with Debit Card 1234, Merchant Name: KFC AL SADD, on 01/11/2026", "KFC Al Sadd", app.heron.core.money.BudgetCategory.DINING)
+        check("Your card ending 1234 has been used for QAR 310.00 at LULU HYPERMARKET-GHARRAFA on 30-10-2026", "Lulu Hypermarket-gharrafa", app.heron.core.money.BudgetCategory.GROCERIES)
+        check("Transaction of QAR 260.00 at OOREDOO QATAR ONLINE on card ending 1234", "Ooredoo Qatar Online", app.heron.core.money.BudgetCategory.BILLS)
+        check("Card 1234 used for QAR 1,950.00. Location: \"QATAR AIRWAYS DOHA QA\"", "Qatar Airways", app.heron.core.money.BudgetCategory.TRAVEL)
+        check("Purchase of QAR 45.00. Location: \"SNOONU\"", "Snoonu", app.heron.core.money.BudgetCategory.DINING)
+        check("Purchase of QAR 19.99. Location: \"SPOTIFY P1234567\"", "Spotify P1234567", app.heron.core.money.BudgetCategory.SUBSCRIPTIONS)
+    }
+
+    @Test fun lulExchangeIsATransferNotGroceries() {
+        check("Transaction of QAR 2,000.00 at LULU EXCHANGE on card ending 1234", "Lulu Exchange", app.heron.core.money.BudgetCategory.TRANSFERS)
+    }
+}

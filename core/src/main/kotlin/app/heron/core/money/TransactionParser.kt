@@ -16,6 +16,10 @@ object TransactionParser {
     private val AMOUNT_BEFORE = Regex("""(?i)(?<![A-Z])($CUR|$SYM)\s?($NUM)""")
     private val AMOUNT_AFTER = Regex("""(?i)($NUM)\s?($CUR)(?![A-Z])""")
     private val CARD = Regex("""(?i)(?:card|a/c|acct|account)[^0-9]{0,20}(?:ending(?: in| with)?|no\.?|x+|\*+|#)?\s*[x*]*(\d{3,4})\b""")
+    /** Banks that label the merchant: `Location: "TALABAT DOHA QA"`, `Merchant Name: WOQOD`, multi-line or inline. */
+    private val LABELLED = Regex(
+        """(?i)\b(?:location|merchant\s*name|merchant|place|terminal|shop|store|outlet|description|desc|details|payee|beneficiary|purchase\s+at|txn\s+at|transaction\s+at)\s*[:\-–=]\s*(?:"([^"\n]{2,60})"|“([^”\n]{2,60})”|'([^'\n]{2,60})'|([^\n;|"]{2,60}?))(?=\s*(?:\n|;|\||$)|\.\s|,\s*(?:on|at|date|time|avl|avail|available|bal|balance|ref|card)\b|\s+(?:on\s+\d|date|time|avl|avail|available|bal|balance|ref|card\b))"""
+    )
     private val MERCHANT = Regex(
         """(?i)\b(?:at|to|from|@|merchant[:\s]|towards|for payment to)\s+([A-Za-z0-9&'.*\- ]{2,40}?)(?=\s+(?:on|using|with|via|ref|avl|avail|available|bal|balance|card|at\s+\d|for)\b|[.,;:\n]|\s*$)"""
     )
@@ -82,7 +86,34 @@ object TransactionParser {
         return num.replace(",", "").toDoubleOrNull()?.let { it to currency }
     }
 
-    private fun merchant(text: String): String? = MERCHANT.findAll(text)
+    private fun merchant(text: String): String? = labelled(text)?.let(::cleanMerchant) ?: inlineMerchant(text)?.let(::cleanMerchant)
+
+    private fun labelled(text: String): String? = LABELLED.findAll(text)
+        .map { m -> m.groupValues.drop(1).firstOrNull { it.isNotBlank() }.orEmpty().trim().trimEnd('.', ',', '-') }
+        .firstOrNull { v -> v.length >= 2 && v.any { it.isLetter() } && !AMOUNT_BEFORE.containsMatchIn(v) && v.lowercase().substringBefore(' ') !in MERCHANT_STOP }
+
+    private val PLACE_SUFFIX = Regex(
+        """(?i)(?:[\s,\-]+(?:doha|qa|qat|qatar|lusail|al\s+rayyan|rayyan|al\s+wakra|wakra|wakrah|al\s+khor|ae|are|uae|dubai|abu\s+dhabi|sharjah|sa|sau|ksa|riyadh|jeddah|dammam|bh|bhr|bahrain|manama|kw|kwt|kuwait|om|omn|oman|muscat|(?-i:[A-Z]{2})\s*\d{0,6}|\d+))+\s*$"""
+    )
+
+    private val SMALL_WORDS = setOf("al", "el", "the", "and", "of", "de", "bin", "abu", "la", "le", "st", "for", "by", "co", "one", "pro", "top", "new", "bay", "way")
+
+    /** "TALABAT DOHA QA" -> "Talabat", "CARREFOUR CITY CENTER-DOHA" -> "Carrefour City Center", keeps "KFC". */
+    fun cleanMerchant(raw: String): String {
+        var s = raw.trim().trim('"', '\'', '“', '”').replace(Regex("""\s+"""), " ")
+        s = s.replace(Regex("""(?i)\b(?:pos|ecom|e-com|purchase)\b[:\s]*"""), "").trim()
+        repeat(3) { s = s.replace(PLACE_SUFFIX, "").trim() }
+        if (s.length < 2) s = raw.trim().trim('"')
+        return if (s == s.uppercase()) {
+            s.split(' ').joinToString(" ") { w ->
+                // Short all-caps brands stay as they are (KFC, H&M, QIC); everyday words get title case.
+                if (w.length <= 3 && w.none { it.isDigit() } && w.lowercase() !in SMALL_WORDS) w
+                else w.lowercase().replaceFirstChar { it.uppercase() }
+            }
+        } else s
+    }
+
+    private fun inlineMerchant(text: String): String? = MERCHANT.findAll(text)
         .map { it.groupValues[1].trim().trimEnd('.', '-') }
         .firstOrNull { cand ->
             cand.length >= 2 && cand.any { it.isLetter() } &&
