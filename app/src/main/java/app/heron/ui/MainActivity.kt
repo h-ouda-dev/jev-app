@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
     private val screen = mutableStateOf<Screen>(Screen.Main(Tab.TODAY))
     private val pendingCheck = mutableStateOf<String?>(null)
+    private val pendingImport = mutableStateOf(false)
 
     private val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
@@ -141,7 +142,7 @@ class MainActivity : ComponentActivity() {
                                     screen.value = Screen.Main(Tab.SHIELD)
                                 }
                                 Tab.SHIELD -> ShieldScreen(vm, pendingCheck.value) { pendingCheck.value = null }
-                                Tab.MONEY -> MoneyScreen(vm)
+                                Tab.MONEY -> MoneyScreen(vm, pendingImport.value) { pendingImport.value = false }
                             }
                         }
                     }
@@ -192,6 +193,7 @@ class MainActivity : ComponentActivity() {
         when (val route = intent.getStringExtra(EXTRA_TAB)) {
             null -> Unit
             "settings" -> screen.value = Screen.Settings
+            "money-import" -> { screen.value = Screen.Main(Tab.MONEY); pendingImport.value = true }
             else -> Tab.entries.firstOrNull { it.route == route }?.let { screen.value = Screen.Main(it) }
         }
     }

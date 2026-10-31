@@ -108,6 +108,16 @@ class OnDeviceTest {
         assertTrue("Pipeline check failed: ${result.checks.filter { it.required && !it.ok }}", result.allRequiredPassed)
     }
 
+    @Test fun test3_importSmsHistory() = runBlocking {
+        shell("pm grant ${app.packageName} android.permission.READ_SMS")
+        val summary = app.history.importSms(3) { stage, _ -> log("Import: $stage") }
+        log("SMS import: scanned ${summary.scanned}, found ${summary.found}, duplicates ${summary.duplicates}, merchants ${summary.merchants}")
+        // CI sends 3 bank texts and 1 personal text to the emulator before the tests.
+        if (summary.scanned >= 4) assertTrue("Expected the bank texts to become transactions", summary.found + summary.duplicates >= 3)
+        val again = app.history.importSms(3) { _, _ -> }
+        assertEquals("Importing twice must not duplicate", 0, again.found)
+    }
+
     companion object {
         private const val TAG = "HeronTest"
     }

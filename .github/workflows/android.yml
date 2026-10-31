@@ -24,12 +24,12 @@ jobs:
         run: ./gradlew :core:test --stacktrace
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+        run: ./gradlew :app:assembleFullDebug :app:assemblePlayDebug --stacktrace
 
       - uses: actions/upload-artifact@v4
         with:
           name: heron-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/full/debug/app-full-debug.apk
           if-no-files-found: error
 
   # Installs the app on an Android 15 emulator, downloads the published model
@@ -79,7 +79,11 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: |
-            ./gradlew :app:connectedDebugAndroidTest --stacktrace > device-test.log 2>&1; echo $? > device-test.exit
+            adb emu sms send 92002020 "QNB: Your card ending 4421 was used for QAR 245.50 at CARREFOUR CITY CENTER" || true
+            adb emu sms send 92002020 "QNB: QAR 38.00 spent at STARBUCKS VILLAGGIO with card ending 4421" || true
+            adb emu sms send 92002020 "QNB: QAR 12,500.00 has been credited to your account as SALARY" || true
+            adb emu sms send 55501234 "See you at 8!" || true
+            ./gradlew :app:connectedFullDebugAndroidTest --stacktrace > device-test.log 2>&1; echo $? > device-test.exit
             adb pull /data/local/tmp/heron-shots shots || echo "no screenshots"
             adb logcat -d -s HeronTest:I HeronModel:* HeronListener:* AndroidRuntime:E > device-logcat.txt || true
 

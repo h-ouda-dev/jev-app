@@ -23,6 +23,22 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // "full": everything, including importing past bank SMS (sideload / testing, and Play once
+    // Google approves the SMS permission declaration for money management).
+    // "play": no READ_SMS permission, so it can be submitted before that approval.
+    flavorDimensions += "store"
+    productFlavors {
+        create("full") {
+            dimension = "store"
+            isDefault = true
+            buildConfigField("boolean", "SMS_IMPORT", "true")
+        }
+        create("play") {
+            dimension = "store"
+            buildConfigField("boolean", "SMS_IMPORT", "false")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true

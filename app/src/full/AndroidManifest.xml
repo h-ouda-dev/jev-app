@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Only used when the user taps "Import bank text messages": past SMS are read on the
+      phone, bank transactions are kept, everything else is discarded and never stored.
+    -->
+    <uses-permission android:name="android.permission.READ_SMS" />
+</manifest>

@@ -6,6 +6,7 @@ import androidx.work.ExistingWorkPolicy
 import app.heron.core.HeronPipeline
 import app.heron.core.model.DecisionRouter
 import app.heron.data.AppDatabase
+import app.heron.data.HistoryImportManager
 import app.heron.data.SettingsStore
 import app.heron.ml.ModelManager
 import app.heron.service.Notifier
@@ -24,6 +25,7 @@ class HeronApp : Application() {
     val pipeline = HeronPipeline(router)
     val models: ModelManager by lazy { ModelManager(this, router) }
     val notifier: Notifier by lazy { Notifier(this) }
+    val history: HistoryImportManager by lazy { HistoryImportManager(this) }
 
     override fun onCreate() {
         super.onCreate()

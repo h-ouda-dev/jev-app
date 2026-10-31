@@ -51,6 +51,9 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE timestamp >= :since ORDER BY timestamp ASC")
     suspend fun since(since: Long): List<TransactionRecord>
 
+    @Insert
+    suspend fun insertAll(t: List<TransactionRecord>)
+
     @Query("SELECT COUNT(*) FROM transactions WHERE rawText = :raw AND timestamp > :since")
     suspend fun countDuplicates(raw: String, since: Long): Int
 

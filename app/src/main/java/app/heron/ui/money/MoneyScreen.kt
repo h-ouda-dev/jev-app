@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
 import androidx.compose.material.icons.rounded.Autorenew
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -80,12 +81,14 @@ import java.util.Locale
 private fun cat(name: String) = runCatching { BudgetCategory.valueOf(name) }.getOrDefault(BudgetCategory.OTHER)
 
 @Composable
-fun MoneyScreen(vm: MainViewModel) {
+fun MoneyScreen(vm: MainViewModel, startImport: Boolean = false, onImportShown: () -> Unit = {}) {
     val all by vm.transactions.collectAsState()
     val subs by vm.subscriptions.collectAsState()
     val settings by vm.settings.collectAsState()
     var monthOffset by rememberSaveable { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf<TransactionRecord?>(null) }
+    var importing by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(startImport) { if (startImport) { importing = true; onImportShown() } }
 
     val zone = ZoneId.systemDefault()
     val month = YearMonth.now().minusMonths(monthOffset.toLong())
@@ -101,6 +104,7 @@ fun MoneyScreen(vm: MainViewModel) {
     LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp)) {
         item {
             PageHeader("Money", eyebrow = month.format(DateTimeFormatter.ofPattern("MMMM yyyy", Locale.getDefault()))) {
+                IconButton(onClick = { importing = true }) { Icon(Icons.Rounded.History, "Import past transactions") }
                 IconButton(onClick = { monthOffset++ }) { Icon(Icons.AutoMirrored.Rounded.KeyboardArrowLeft, "Previous month") }
                 IconButton(onClick = { if (monthOffset > 0) monthOffset-- }, enabled = monthOffset > 0) {
                     Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, "Next month")
@@ -246,8 +250,10 @@ fun MoneyScreen(vm: MainViewModel) {
                 EmptyState(
                     Icons.Rounded.AccountBalanceWallet,
                     "No transactions yet",
-                    "Turn on your bank's card alerts (app notifications or SMS). Heron picks them up automatically, with no bank login.",
-                )
+                    "Turn on your bank's card alerts and Heron picks them up from now on. Bring in the past from your bank texts or a statement.",
+                ) {
+                    androidx.compose.material3.Button(onClick = { importing = true }, shape = CircleShape) { Text("Import past transactions") }
+                }
             }
         }
         days.forEach { (day, rows) ->
@@ -264,6 +270,7 @@ fun MoneyScreen(vm: MainViewModel) {
         item { Spacer(Modifier.height(24.dp)) }
     }
 
+    if (importing) ImportSheet(vm) { importing = false }
     editing?.let { t -> CategorySheet(t, onDismiss = { editing = null }, onPick = { vm.recategorize(t, it); editing = null }, onDelete = { vm.deleteTransaction(t); editing = null }) }
 }
 

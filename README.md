@@ -1,129 +1,116 @@
-# Jev: on-device decisions for your notifications
+# Heron
 
-Jev is an Android app that makes small, repeated decisions about everything your phone receives, entirely on the phone. It ships three features that share one data source, Android's notification listener, and one on-device decision model:
+**Calm phone. Sharp instincts.**
 
-| Feature | Decision | Choices |
+Heron is an Android app that makes the small, repeated decisions your phone faces all day. It does all of this on the phone:
+
+| | What it does |
+|---|---|
+| **Inbox** | Sorts every notification into **Urgent · Later · Digest · Muted**. Digest items arrive together at times you choose, and muted ones never buzz. |
+| **Shield** | Gives every message an instant red-flag checklist: pressure, payment or code requests, fake banks and couriers, dodgy links. It warns you about likely scams. |
+| **Money** | Reads your bank's alerts, sorts spending into categories, and flags odd charges, duplicates and subscription price rises. It can **import your history** from past bank SMS or a CSV statement. |
+
+Notifications, messages and transactions are processed only on the phone and are never uploaded. The only network use is the one-time AI model download.
+
+## Brand
+
+- **Name:** Heron. A heron stands perfectly still and strikes only at what matters.
+- **Colours:**
+  - Lagoon teal `#17605F` (primary), deepening to `#0E3B43`
+  - Saffron "beak" `#F2A93B` as the single accent
+  - Mist `#F6F4EE` and Night-water `#0B1A1F` neutrals
+  - Semantic tones for urgent, later, digest, muted, safe, caution and danger
+- **Type:** Bricolage Grotesque for display, Plus Jakarta Sans for text. Both are bundled under the SIL OFL, and the licences are in `app/src/main/assets/licenses`.
+- **Icon:** a heron mark standing in still water. It comes as an adaptive launcher icon, a themed monochrome icon, a notification icon and the splash screen.
+
+## Get it on your phone
+
+1. Open the latest **Build APK** run under *Actions* and download `heron-debug-apk`.
+2. Install `app-full-debug.apk` on the phone. Allow "Install unknown apps" when asked.
+3. The onboarding walks you through the rest: notification access, alerts, and the optional on-device AI.
+
+On Samsung phones, set Heron's battery usage to **Unrestricted** (Settings → Apps → Heron → Battery) so One UI doesn't stop it in the background.
+
+## Importing past transactions
+
+Money → the history icon (or **Import past transactions** when Money is empty):
+
+- **Bank text messages, last 1, 3, 6 or 12 months.** Heron reads the SMS inbox on the phone, keeps only bank transactions (purchases, debits, credits), and ignores every other message. OTPs and promos are rejected.
+- **Bank statement (CSV).** Download a CSV from online banking or a statement email and pick it. Heron detects the layout by meaning:
+  - Columns: a date; a description; and either one signed amount or separate debit and credit columns. An optional type (DR/CR) or currency column is used if present.
+  - Formats: most date formats, `1,234.56` and `1.234,56`, `(123.45)`, and `DR`/`CR` suffixes.
+
+Either way:
+- Each distinct merchant is categorised once, so hundreds of transactions import quickly even with the AI.
+- Anomalies and subscriptions are computed in time order.
+- Anything already in Heron, for example seen live as a notification, is skipped.
+- When Heron connects, bank alerts already sitting in your notification shade are added too.
+
+Email isn't read directly. Gmail access requires a restricted Google scope with a paid annual security audit. Statement CSVs cover the same need.
+
+### Two build flavours
+
+| Flavour | SMS import | For |
 |---|---|---|
-| **Notification triage** | "This notification is …" | urgent · can wait · digest · silence |
-| **Scam shield** | 8 yes/no red-flag questions per message | yes · no, plus offline link analysis |
-| **Private money tracker** | "This purchase is for …" | 11 budget categories, plus unusual-charge and subscription detection |
+| `full` (default) | ✅ (`READ_SMS`) | Sideloading and testing, and Google Play once the SMS declaration is approved |
+| `play` | ❌ | Google Play before that approval. CSV import still works. |
 
-Notifications, messages and transactions are processed only on the phone and are never uploaded. The only network use is the one-time model download.
+Google Play only grants `READ_SMS` through its Permissions Declaration Form, and "SMS-based money management" (budget tracking) is a listed exception. Submit the `play` flavour first, apply for the exception, and switch to `full` once it's approved.
 
-## How it decides
+## How decisions are made
 
-A Jev-style decision model takes a **state**, a **question** and a fixed set of **choices**. It returns the **chosen option**, a **confidence** and the **probability of every choice**. It doesn't write free text.
+Each decision is Jev-style: a **state**, a **question** and fixed **choices** go in, and a **choice**, **confidence** and **probability of every choice** come out. They go through `DecisionRouter`:
 
-```
-state:    "App: WhatsApp. From: Mom. Message: call me when you land. Time: Friday 22:10."
-question: "This notification is"
-choices:  [urgent…, can wait…, digest…, silence…]
-→ choice = "urgent", confidence = 0.81, probabilities = {...}
-```
+1. **Your corrections win.** Teach Heron from any inbox item, or recategorise a merchant once.
+2. **The on-device model**, ModernBERT running with ONNX Runtime, blended with the built-in rules (`Ensemble`) so it never does worse than the rules alone.
+3. **Built-in rules** whenever there's no model, it errors, or it isn't confident.
 
-Decisions run through `DecisionRouter`, which works in this order:
-1. **Your own rules come first.** These are learned from your corrections: tap any inbox item to fix it, and that sender is remembered.
-2. **The on-device model is used next**, if one is installed. It's a ModernBERT encoder run with ONNX Runtime.
-3. **Built-in rules are the fallback.** The app is fully usable before any model is installed. If the model is missing, errors, or isn't confident enough, the rules answer instead.
+The scam shield asks each red-flag question separately, which is why it can explain itself even though the model can't write text. Link checks (look-alike domains, shorteners, raw IPs, punycode, risky TLDs) are deterministic.
 
-The scam shield asks each red-flag question separately. That's how it gives an explainable checklist even though the model can't write explanations. Link checks (look-alike domains, shorteners, raw IPs, punycode, risky TLDs) are deterministic and run without any model.
+## The on-device model
+
+**Settings → Heron AI → Download** fetches the model from the `model-v1` GitHub release:
+- It downloads in the background with progress, Wi-Fi only by default.
+- Interrupted downloads resume.
+- Every file is checked against its SHA-256 before use.
+- After installing, Heron runs a 23-case self-test and shows the score and the speed on your phone.
+
+**Settings → Diagnostics → Check that everything works** sends Heron three test notifications (a parcel scam, a promo and an emergency) and checks that each is handled correctly.
+
+`.github/workflows/model.yml`:
+1. Exports `tasksource/ModernBERT-base-nli` (Apache-2.0).
+2. Builds fp32, fp16, int8 and int4 variants and ships the smallest one that makes the same decisions as fp32 on the self-test. That's currently fp16, about 300 MB.
+3. Checks that the app's Kotlin tokenizer matches Hugging Face exactly and that the logits match Python.
+4. Publishes the release only if all of that passes.
+
+Licences, since the app is commercial (ads plus a paid tier): every shipped model and font is Apache-2.0, MIT or OFL. Non-commercial models such as jevhome-B are deliberately excluded.
 
 ## Project layout
 
 ```
-core/   Pure Kotlin. No Android dependency; unit-tested on the JVM.
-        model/      Decision, DecisionRouter, PairScoringDecisionModel, ModelConfig
-        tokenizer/  Byte-level BPE tokenizer that reads Hugging Face tokenizer.json (ModernBERT)
-        triage/     TriageEngine (+ VIP and learned-rule handling)
-        scam/       ScamShield (red-flag checklist), LinkInspector
-        money/      TransactionParser, Categorizer, SpendingInsights (anomalies, subscriptions)
-        HeronPipeline.kt  One notification in → triage + scam report + transaction out
-app/    Android (Kotlin, Jetpack Compose, Room, WorkManager, ONNX Runtime)
-        service/HeronNotificationListener  The notification listener that feeds the pipeline
-        ml/          ONNX Runtime encoder + model import/loading
-        work/        Digest delivery at the times you choose
-        ui/          Inbox · Shield · Money · Settings
-tools/export_model.py  Exports a ModernBERT decision model to ONNX for the app
+core/   Pure Kotlin, unit-tested on the JVM
+        model/      Decision, DecisionRouter, Ensemble, PairScoringDecisionModel, ModelConfig
+        tokenizer/  Byte-level BPE tokenizer for Hugging Face tokenizer.json (ModernBERT)
+        triage/     TriageEngine        scam/  ScamShield, LinkInspector
+        money/      TransactionParser, Categorizer, SpendingInsights, StatementCsv, HistoryImporter
+        Diagnostics.kt (self-test)      HeronPipeline.kt (one notification → all three features)
+app/    Android: Kotlin, Jetpack Compose, Room, WorkManager, ONNX Runtime
+        ui/theme       Heron palette, typography, shapes
+        ui/components  cards, tags, rings, meters, app icons, empty states
+        ui/onboarding · today · inbox · shield · money · settings
+        service/       notification listener and Heron's own notifications
+        ml/            model download, verification, loading, self-test
+        data/          Room, settings, history import, demo data
+tools/  export_model.py, eval_decisions.json
 ```
-
-## Get it on your Galaxy S25 Ultra
-
-**Option A: download the APK from CI (no Android Studio needed)**
-1. Every push runs the **Build APK** GitHub Action. Open the latest run under *Actions* and download the `jev-debug-apk` artifact.
-2. Copy `app-debug.apk` to the phone and open it. Allow "Install unknown apps" for your file manager when asked.
-
-**Option B: build it yourself**
-1. Install Android Studio and open this folder.
-2. Enable *Developer options → USB debugging* on the phone, plug it in, and press **Run**.
-   Or from the command line: `./gradlew :app:installDebug`.
-
-**First run**
-1. Grant **Notification access** (Inbox tab → *Open settings* → Jev → Allow).
-2. Allow Jev to post notifications. It needs this for scam warnings, digests and spending flags.
-3. Jev starts in **shadow mode**: it labels notifications but hides nothing. Correct a few labels and add your important people in Settings. When you trust it, turn on **Hide digest & silenced**.
-4. On Samsung phones, set Jev's battery usage to **Unrestricted** (Settings → Apps → Jev → Battery). This stops One UI from killing the listener.
-
-## The on-device model
-
-Jev works with built-in rules out of the box. To use the model, tap **Download model** on the Inbox card or under Settings → On-device model. The app then:
-
-1. Fetches `manifest.json` from the `model-v1` GitHub release. This is the only thing Jev downloads.
-2. Downloads `model.onnx` (the smallest variant that passes the agreement gate; currently fp32, about 600 MB), `tokenizer.json` and `decision_config.json` in the background, with a progress notification. Wi-Fi only is on by default, interrupted downloads resume where they stopped, and every file is checked against its SHA-256 from the manifest before it's used.
-3. Installs and loads the model with ONNX Runtime, then **runs the self-test automatically**. The self-test is 23 labelled examples across triage, the scam checklist and budget categories. You see the score and ms per decision on your phone, and can open the result of every individual test.
-
-**Settings → Diagnostics → Check that everything works** tests the live path end to end. Jev sends itself three test notifications (a parcel scam, a promo and an emergency). It then checks that the notification listener received them, that the scam shield flagged the scam, and that triage sorted the other two correctly. It also confirms notification access, alert permission and model status.
-
-### How the model is built and tested
-
-`.github/workflows/model.yml` builds the release:
-1. **Export.** `tools/export_model.py` exports [`tasksource/ModernBERT-base-nli`](https://huggingface.co/tasksource/ModernBERT-base-nli) (ModernBERT-base, 149M params) to ONNX and quantises it to int8. It also reports whether batching or quantisation changes the outputs.
-2. **Verify.** `RealModelTest` runs the exported model through the app's own Kotlin code: the tokenizer must match Hugging Face's token IDs exactly, the logits must match Python's ONNX Runtime, and the self-test must pass.
-3. **Publish.** Only if all of that passes are the files published as the `model-v1` release.
-
-`.github/workflows/android.yml` builds the APK, then runs `OnDeviceTest` on an Android 15 emulator. The test downloads the published model, checks resume and checksum protection, runs ONNX Runtime on Android, runs the self-test, and runs the live notification pipeline check.
-
-The official ModernBERT-JEV checkpoint isn't publicly downloadable, so CI can't fetch it. The app is built so it can be swapped in: point `--model` at any sequence-classification checkpoint and adjust `decision_config.json`.
-
-To build a model by hand and import it instead:
-
-```bash
-pip install -r tools/requirements.txt
-python tools/export_model.py --model tasksource/ModernBERT-base-nli --out jev-model
-```
-
-Then use **Settings → Import files** and pick `model.onnx`, `tokenizer.json` and `decision_config.json`.
-
-`decision_config.json` controls how the model is prompted:
-
-```json
-{
-  "mode": "pair",
-  "premise_template": "{state}",
-  "hypothesis_template": "{question} {choice}.",
-  "score_index": 0,
-  "contradiction_index": 2,
-  "use_log_prob": true,
-  "max_length": 256,
-  "temperature": 1.0
-}
-```
-
-How the config is used:
-- **Multi-choice questions** (triage, budget category): each choice is scored as a (premise, hypothesis) pair. The logit at `score_index` ("entailment") is that choice's score, and a softmax across choices gives the decision.
-- **Yes/no red flags:** a single statement is judged once, using entailment vs `contradiction_index`.
-- **Blending with rules:** triage and budget categories combine the model with the built-in rules (`Ensemble`). The zero-shot model is very good at the scam checklist but weaker at those two tasks on its own.
-- **Other heads:** if a future JEV export uses a different head, only this config and `PairScoringDecisionModel` need to change.
-
-## Google Play notes
-
-- The app uses only the notification listener. It doesn't need `READ_SMS` or Accessibility, which are the permissions Play restricts most heavily. SMS bank alerts still arrive as notifications from your messaging app, so they're read the same way.
-- Play's review requires a prominent disclosure for notification access. The Inbox onboarding card covers this, and it should be expanded into a full privacy policy before publishing.
 
 ## Development
 
 ```bash
-./gradlew :core:test                       # fast JVM tests for all decision logic
-JEV_MODEL_DIR=jev-model ./gradlew :core:test # + real-model tests against an exported model
-./gradlew :app:assembleDebug               # needs the Android SDK
-./gradlew :app:connectedDebugAndroidTest   # on-device tests (phone or emulator)
+./gradlew :core:test                            # fast JVM tests for all decision logic
+JEV_MODEL_DIR=heron-model ./gradlew :core:test  # + real-model tests against an exported model
+./gradlew :app:assembleFullDebug                # APK (needs the Android SDK)
+./gradlew :app:connectedFullDebugAndroidTest    # on-device tests + screenshots (phone or emulator)
 ```
+
+CI runs the on-device tests on an Android 15 emulator. It also pushes screenshots of every screen, in light and dark mode with demo data, to the `ci-screenshots` branch for design review.

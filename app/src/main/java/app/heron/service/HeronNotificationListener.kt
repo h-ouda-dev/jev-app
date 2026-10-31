@@ -38,6 +38,26 @@ class HeronNotificationListener : NotificationListenerService() {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?) = size > 300
     }
 
+    /**
+     * When Heron (re)connects, bank alerts already sitting in the shade are
+     * added to Money, so nothing posted while it was off is lost.
+     */
+    override fun onListenerConnected() {
+        super.onListenerConnected()
+        val active = try { activeNotifications } catch (_: Exception) { null } ?: return
+        scope.launch {
+            for (sbn in active) {
+                val event = toEvent(sbn) ?: continue
+                try {
+                    val result = heron.pipeline.process(event, TriagePreferences())
+                    if (result.transaction != null) saveTransaction(result, alerts = false)
+                } catch (t: Throwable) {
+                    Log.w(TAG, "Couldn't import active notification", t)
+                }
+            }
+        }
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val event = toEvent(sbn) ?: return
         // Apps re-post the same notification constantly (progress, edits); only handle real changes.

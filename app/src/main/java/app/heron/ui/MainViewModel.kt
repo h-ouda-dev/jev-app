@@ -10,6 +10,8 @@ import app.heron.core.money.SpendingInsights
 import app.heron.core.money.Subscription
 import app.heron.core.scam.ScamReport
 import app.heron.core.triage.TriageBucket
+import app.heron.BuildConfig
+import app.heron.core.money.ImportSummary
 import app.heron.data.AppSettings
 import app.heron.data.DemoData
 import app.heron.data.MerchantRule
@@ -64,6 +66,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun consumeMessage() { _message.value = null }
 
     fun completeOnboarding() = updateSettings { it.copy(onboarded = true) }
+
+    // ---- History import (Money) ----
+    private val _import = MutableStateFlow<ImportState>(ImportState.Idle)
+    val importState: StateFlow<ImportState> = _import.asStateFlow()
+    fun resetImport() { _import.value = ImportState.Idle }
+
+    fun canReadSms(): Boolean = BuildConfig.SMS_IMPORT &&
+        ContextCompat.checkSelfPermission(app, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+
+    fun importSms(months: Int) = runImport("Bank text messages · last $months ${if (months == 1) "month" else "months"}") { progress ->
+        app.history.importSms(months, progress)
+    }
+
+    fun importCsv(uri: Uri) = runImport("Bank statement") { progress -> app.history.importCsv(app, uri, progress) }
+
+    private fun runImport(label: String, block: suspend ((String, Float?) -> Unit) -> ImportSummary) = viewModelScope.launch {
+        _import.value = ImportState.Running(label, "Starting…", null)
+        _import.value = try {
+            val summary = block { stage, p -> _import.value = ImportState.Running(label, stage, p) }
+            ImportState.Done(label, summary)
+        } catch (t: Throwable) {
+            ImportState.Failed(t.message ?: "Import failed")
+        }
+    }
 
     fun canPostNotifications(): Boolean =
         ContextCompat.checkSelfPermission(app, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
@@ -220,4 +246,11 @@ data class PipelineCheck(val name: String, val ok: Boolean, val detail: String, 
 
 data class PipelineTest(val checks: List<PipelineCheck>, val running: Boolean) {
     val allRequiredPassed: Boolean get() = checks.filter { it.required }.all { it.ok }
+}
+
+sealed interface ImportState {
+    data object Idle : ImportState
+    data class Running(val label: String, val stage: String, val progress: Float?) : ImportState
+    data class Done(val label: String, val summary: ImportSummary) : ImportState
+    data class Failed(val message: String) : ImportState
 }

@@ -32,13 +32,15 @@ object TransactionParser {
         "% off", "win", "get up to", "earn up to", "promo", "limited time", "apply now", "pre-approved", "due date", "minimum due",
     )
 
+    private val PERCENT_OFF = Regex("""\d+\s?%\s?(off|cashback|discount)""")
+
     val FINANCE_APP_HINTS = listOf("bank", "qnb", "cbq", "pay", "wallet", "card", "finance", "money", "revolut", "wise", "hsbc", "citi", "chase")
 
     fun parse(event: NotificationEvent): ParsedTransaction? = parse(event.fullText, event.packageName, event.postedAt)
 
     fun parse(text: String, sourcePackage: String, timestamp: Long): ParsedTransaction? {
         val t = text.norm()
-        if (t.containsAnyPhrase(REJECT_WORDS)) return null
+        if (t.containsAnyPhrase(REJECT_WORDS) || PERCENT_OFF.containsMatchIn(t)) return null
         val isDebit = t.containsAnyPhrase(DEBIT_WORDS)
         val isCredit = t.containsAnyPhrase(CREDIT_WORDS)
         val financeApp = FINANCE_APP_HINTS.any { sourcePackage.lowercase().contains(it) }
