@@ -18,6 +18,9 @@ interface NotificationDao {
     @Query("SELECT * FROM notifications WHERE scamVerdict IS NOT NULL AND scamVerdict != 'SAFE' ORDER BY postedAt DESC LIMIT 100")
     fun scamWarnings(): Flow<List<NotificationRecord>>
 
+    @Query("SELECT COUNT(*) FROM notifications WHERE sbnKey = :key AND title = :title AND text = :text")
+    suspend fun countSame(key: String, title: String, text: String): Int
+
     @Query("UPDATE notifications SET handledAt = :at WHERE sbnKey = :key AND handledAt IS NULL")
     suspend fun markHandled(key: String, at: Long)
 

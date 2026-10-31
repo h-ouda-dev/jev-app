@@ -11,6 +11,7 @@ import app.heron.core.model.NotificationEvent
 import app.heron.core.money.BudgetCategory
 import app.heron.core.money.Direction
 import app.heron.core.money.SpendingInsights
+import app.heron.core.money.TransactionParser
 import app.heron.core.money.TxPoint
 import app.heron.core.scam.ScamVerdict
 import app.heron.core.triage.TriageBucket
@@ -21,6 +22,7 @@ import app.heron.heron
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -91,8 +93,34 @@ class HeronNotificationListener : NotificationListenerService() {
         }
     }
 
+    /**
+     * Pull-to-refresh: run everything still in the shade through Heron again.
+     * Already-recorded notifications are skipped, so this never creates duplicates.
+     */
+    fun rescan(): Job = scope.launch {
+        val active = try { activeNotifications } catch (_: Exception) { null } ?: return@launch
+        for (sbn in active) {
+            val event = toEvent(sbn) ?: continue
+            NotificationActions.remember(sbn.key, sbn.notification.contentIntent)
+            try {
+                handle(sbn, event)
+            } catch (t: Throwable) {
+                Log.w(TAG, "Rescan failed for ${sbn.packageName}", t)
+            }
+        }
+    }
+
     private suspend fun handle(sbn: StatusBarNotification, event: NotificationEvent) {
         val app = heron
+        // Already recorded (e.g. after a restart or a refresh)? Nothing to do.
+        if (event.packageName != packageName && app.db.notifications().countSame(event.key, event.title, event.text) > 0) {
+            // Cheap check first; only bank alerts go back through the pipeline (Money dedupes them).
+            if (TransactionParser.parse(event) != null) {
+                val result = app.pipeline.process(event, TriagePreferences())
+                saveTransaction(result, alerts = false)
+            }
+            return
+        }
         val settings = app.settings.value
         val rules = app.db.rules()
         val prefs = TriagePreferences(

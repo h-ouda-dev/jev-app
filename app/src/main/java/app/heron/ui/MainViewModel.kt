@@ -90,9 +90,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Syncs with the shade: what's no longer there has been handled. Call when screens resume. */
-    fun reconcileWithShade() = viewModelScope.launch {
-        val active = NotificationActions.activeKeys() ?: return@launch
+    fun reconcileWithShade() = viewModelScope.launch { reconcile() }
+
+    private suspend fun reconcile() {
+        val active = NotificationActions.activeKeys() ?: return
         db.notifications().markHandledUnlessActive(active.toList(), System.currentTimeMillis() - 7 * 86_400_000L, System.currentTimeMillis())
+    }
+
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+
+    /** Pull-to-refresh on Today/Inbox: re-scan the shade, then mark what's gone as handled. */
+    fun refresh() {
+        if (_refreshing.value) return
+        viewModelScope.launch {
+            _refreshing.value = true
+            val started = System.currentTimeMillis()
+            if (!hasNotificationAccess()) _message.value = "Turn on notification access so Heron can refresh"
+            NotificationActions.rescan()?.join()
+            reconcile()
+            // Keep the spinner up long enough to read as "done", not as a flicker.
+            delay((700 - (System.currentTimeMillis() - started)).coerceAtLeast(0))
+            _refreshing.value = false
+        }
     }
 
     // ---- History import (Money) ----

@@ -39,6 +39,9 @@ object NotificationActions {
         null
     }
 
+    /** Re-processes everything in the shade; null if Heron isn't connected. */
+    fun rescan(): kotlinx.coroutines.Job? = listener?.get()?.rescan()
+
     /** Removes it from the shade, like tapping an auto-cancel notification would. */
     fun dismiss(key: String) {
         try { listener?.get()?.cancelNotification(key) } catch (_: Exception) { }

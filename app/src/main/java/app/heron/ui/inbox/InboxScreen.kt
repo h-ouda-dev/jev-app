@@ -36,6 +36,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -79,6 +80,7 @@ import app.heron.ui.theme.verdictColor
 
 private const val DONE = "DONE"
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InboxScreen(vm: MainViewModel, openShield: (String) -> Unit) {
     val context = LocalContext.current
@@ -101,73 +103,77 @@ fun InboxScreen(vm: MainViewModel, openShield: (String) -> Unit) {
     }
     val grouped = shown.groupBy { dayLabel(it.postedAt) }
 
-    LazyColumn(Modifier.fillMaxSize().statusBarsPadding(), contentPadding = PaddingValues(bottom = 24.dp)) {
-        item { PageHeader("Inbox", Modifier.padding(horizontal = 20.dp), eyebrow = "Sorted by Heron") }
-        item {
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                FilterPill("All", items.size, null, filter == null) { filter = null }
-                TriageBucket.entries.forEach { b ->
-                    FilterPill(b.label, items.count { it.bucket == b.name }, b, filter == b.name) { filter = b.name }
-                }
-                FilterPill("Done", done.size, null, filter == DONE) { filter = DONE }
-            }
-        }
-        if (!settings.actOnNotifications && items.isNotEmpty()) {
+    val refreshing by vm.refreshing.collectAsState()
+    // Pull down from the top to re-sync with the notification shade.
+    PullToRefreshBox(isRefreshing = refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 24.dp)) {
+            item { PageHeader("Inbox", Modifier.padding(horizontal = 20.dp), eyebrow = "Sorted by Heron") }
             item {
                 Row(
-                    Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth()
-                        .clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(Icons.Rounded.Visibility, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        "Preview mode: Heron labels but doesn't hide anything yet. Tap any item to teach it.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    FilterPill("All", items.size, null, filter == null) { filter = null }
+                    TriageBucket.entries.forEach { b ->
+                        FilterPill(b.label, items.count { it.bucket == b.name }, b, filter == b.name) { filter = b.name }
+                    }
+                    FilterPill("Done", done.size, null, filter == DONE) { filter = DONE }
+                }
+            }
+            if (!settings.actOnNotifications && items.isNotEmpty()) {
+                item {
+                    Row(
+                        Modifier.padding(horizontal = 20.dp, vertical = 4.dp).fillMaxWidth()
+                            .clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f))
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Rounded.Visibility, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            "Preview mode: Heron labels but doesn't hide anything yet. Tap any item to teach it.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                }
+            }
+            if (shown.isEmpty()) {
+                item {
+                    val b = filter?.takeIf { it != DONE }?.let { TriageBucket.valueOf(it) }
+                    EmptyState(
+                        icon = b?.icon() ?: if (filter == null && everything.isNotEmpty()) Icons.Rounded.DoneAll else Icons.Rounded.Inbox,
+                        title = when {
+                            everything.isEmpty() -> "Nothing here yet"
+                            filter == null -> "All caught up"
+                            filter == DONE -> "Nothing handled yet"
+                            else -> "Nothing in ${b?.label}"
+                        },
+                        body = when {
+                            everything.isEmpty() -> "Notifications appear here as Heron sorts them."
+                            filter == null -> "Everything has been dealt with. Handled notifications are in Done."
+                            filter == DONE -> "Notifications you open or dismiss move here."
+                            else -> b?.blurb() ?: ""
+                        },
+                        tint = b?.let { bucketColor(it) } ?: MaterialTheme.colorScheme.primary,
                     )
                 }
             }
-        }
-        if (shown.isEmpty()) {
-            item {
-                val b = filter?.takeIf { it != DONE }?.let { TriageBucket.valueOf(it) }
-                EmptyState(
-                    icon = b?.icon() ?: if (filter == null && everything.isNotEmpty()) Icons.Rounded.DoneAll else Icons.Rounded.Inbox,
-                    title = when {
-                        everything.isEmpty() -> "Nothing here yet"
-                        filter == null -> "All caught up"
-                        filter == DONE -> "Nothing handled yet"
-                        else -> "Nothing in ${b?.label}"
-                    },
-                    body = when {
-                        everything.isEmpty() -> "Notifications appear here as Heron sorts them."
-                        filter == null -> "Everything has been dealt with. Handled notifications are in Done."
-                        filter == DONE -> "Notifications you open or dismiss move here."
-                        else -> b?.blurb() ?: ""
-                    },
-                    tint = b?.let { bucketColor(it) } ?: MaterialTheme.colorScheme.primary,
-                )
-            }
-        }
-        grouped.forEach { (day, rows) ->
-            item(key = "h-$day") {
-                Text(
-                    day.uppercase(),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp),
-                )
-            }
-            item(key = "g-$day") {
-                HeronCard(Modifier.padding(horizontal = 16.dp), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp)) {
-                    rows.forEachIndexed { i, r ->
-                        if (i > 0) HorizontalDivider(Modifier.padding(start = 58.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
-                        NotificationRow(r, onOpen = { vm.openInApp(context, r) }, onDetails = { selected = r })
+            grouped.forEach { (day, rows) ->
+                item(key = "h-$day") {
+                    Text(
+                        day.uppercase(),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 8.dp),
+                    )
+                }
+                item(key = "g-$day") {
+                    HeronCard(Modifier.padding(horizontal = 16.dp), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp)) {
+                        rows.forEachIndexed { i, r ->
+                            if (i > 0) HorizontalDivider(Modifier.padding(start = 58.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+                            NotificationRow(r, onOpen = { vm.openInApp(context, r) }, onDetails = { selected = r })
+                        }
                     }
                 }
             }
