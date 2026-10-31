@@ -48,7 +48,7 @@ class HeronApp : Application() {
  * Statement imports are left alone: they come from the user's own file.
  */
 private suspend fun HeronApp.revalidateTransactions() {
-    val prefs = getSharedPreferences("heron_maintenance", MODE_PRIVATE)
+    val prefs = getSharedPreferences("heron_maintenance", android.content.Context.MODE_PRIVATE)
     if (prefs.getInt("parser_version", 0) >= PARSER_VERSION) return
     val dao = db.transactions()
     dao.since(0).filter { r ->
