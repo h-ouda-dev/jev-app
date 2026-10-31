@@ -16,6 +16,8 @@ data class ImportSummary(
     val sources: Int,
     val from: Long?,
     val to: Long?,
+    /** Extra detail, e.g. which statement columns were used. */
+    val note: String? = null,
 )
 
 /**

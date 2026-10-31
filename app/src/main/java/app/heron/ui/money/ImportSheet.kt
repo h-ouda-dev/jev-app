@@ -158,9 +158,9 @@ fun ImportSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                             IconBadge(Icons.Rounded.Description, MaterialTheme.colorScheme.tertiary, size = 44.dp)
                             Spacer(Modifier.width(14.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("Bank statement (CSV)", style = MaterialTheme.typography.titleMedium)
+                                Text("Bank statement (Excel or CSV)", style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    "Download a CSV from online banking or a statement email, then pick it here. Any bank, any layout.",
+                                    "Download your statement as Excel (.xlsx) or CSV from online banking or a statement email, then pick it here. Any bank, any layout.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -168,7 +168,14 @@ fun ImportSheet(vm: MainViewModel, onDismiss: () -> Unit) {
                         }
                         Spacer(Modifier.height(16.dp))
                         FilledTonalButton(
-                            onClick = { csvPicker.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "application/vnd.ms-excel", "*/*")) },
+                            onClick = {
+                                csvPicker.launch(
+                                    arrayOf(
+                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        "text/csv", "text/comma-separated-values", "text/plain", "application/vnd.ms-excel", "*/*",
+                                    ),
+                                )
+                            },
                             shape = CircleShape, modifier = Modifier.fillMaxWidth().height(50.dp),
                         ) { Text("Choose file") }
                     }
@@ -230,6 +237,7 @@ private fun Result(s: ImportState.Done, onDone: () -> Unit) {
             if (sum.from != null && sum.to != null) Line("From ${d(sum.from!!)} to ${d(sum.to!!)}")
         }
         Line("${sum.scanned} ${if (s.label.startsWith("Bank statement")) "rows" else "messages"} checked")
+        sum.note?.let { Line(it) }
         if (sum.duplicates > 0) Line("${sum.duplicates} already in Heron, skipped")
         if (sum.found == 0) Line("Tip: make sure your bank sends card alerts by SMS, or try a CSV statement.")
     }

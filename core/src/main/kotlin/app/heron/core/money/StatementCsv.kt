@@ -21,7 +21,10 @@ data class StatementParseResult(val rows: List<StatementRow>, val skipped: Int, 
 object StatementCsv {
     // Order = priority. Card statements bill in your currency: prefer the billed date/amount/currency.
     private val DATE_HEADERS = listOf("billed date", "billing date", "bill date", "posting date", "post date", "transaction date", "booking date", "value date", "date")
-    private val DESC_HEADERS = listOf("description", "transaction details", "details", "narration", "narrative", "merchant", "payee", "particulars", "memo", "reference", "name")
+    private val DESC_HEADERS = listOf(
+        "description", "transaction description", "merchant name", "transaction details", "details", "narration", "narrative",
+        "merchant", "payee", "particulars", "memo", "remarks", "reference", "name",
+    )
     private val AMOUNT_HEADERS = listOf("billed amount", "billing amount", "bill amount", "amount (qar)", "amount", "transaction amount", "value", "amount (usd)")
     private val DEBIT_HEADERS = listOf("debit", "withdrawal", "withdrawals", "money out", "paid out", "debit amount", "dr")
     private val CREDIT_HEADERS = listOf("credit", "deposit", "deposits", "money in", "paid in", "credit amount", "cr")
@@ -33,28 +36,69 @@ object StatementCsv {
         "dd MMM yyyy", "d MMM yyyy", "dd-MMM-yyyy", "d-MMM-yyyy", "dd MMM yy", "dd/MM/yy", "MMM d, yyyy", "yyyyMMdd",
     )
 
+    /**
+     * Reads a statement file as picked by the user: CSV/TSV in any common
+     * encoding (UTF-8, UTF-16 as saved by Excel, Windows-1252) or Excel .xlsx.
+     */
+    fun parseBytes(bytes: ByteArray, defaultCurrency: String): StatementParseResult {
+        if (bytes.size >= 4 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()) {
+            return parseTable(XlsxReader.firstSheet(bytes), defaultCurrency)
+        }
+        if (bytes.size >= 4 && (bytes[0].toInt() and 0xFF) == 0xD0 && (bytes[1].toInt() and 0xFF) == 0xCF) {
+            throw IllegalArgumentException("This is an old Excel (.xls) file. Open it and save it as .xlsx or CSV, then import that.")
+        }
+        return parse(decode(bytes), defaultCurrency)
+    }
+
+    fun decode(bytes: ByteArray): String {
+        fun b(i: Int) = bytes.getOrNull(i)?.toInt()?.and(0xFF) ?: -1
+        return when {
+            b(0) == 0xEF && b(1) == 0xBB && b(2) == 0xBF -> String(bytes, 3, bytes.size - 3, Charsets.UTF_8)
+            b(0) == 0xFF && b(1) == 0xFE -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
+            b(0) == 0xFE && b(1) == 0xFF -> String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE)
+            // UTF-16 without a BOM: every other byte is zero for ASCII text.
+            bytes.size > 8 && bytes.take(400).count { it.toInt() == 0 } > minOf(bytes.size, 400) / 4 ->
+                if (bytes[1].toInt() == 0) String(bytes, Charsets.UTF_16LE) else String(bytes, Charsets.UTF_16BE)
+            else -> {
+                val utf8 = String(bytes, Charsets.UTF_8)
+                if ('\uFFFD' in utf8) String(bytes, charset("windows-1252")) else utf8
+            }
+        }
+    }
+
     fun parse(text: String, defaultCurrency: String): StatementParseResult {
-        val lines = text.removePrefix("﻿").lines().filter { it.isNotBlank() }
-        if (lines.isEmpty()) return StatementParseResult(emptyList(), 0, "empty file")
-        val delimiter = listOf(',', ';', '\t', '|').maxBy { d -> lines.take(5).sumOf { splitCsv(it, d).size } }
-        val table = lines.map { splitCsv(it, delimiter) }
+        val clean = text.removePrefix("\uFEFF")
+        val firstLines = clean.lineSequence().filter { it.isNotBlank() }.take(8).toList()
+        if (firstLines.isEmpty()) return StatementParseResult(emptyList(), 0, "empty file")
+        val delimiter = listOf(',', ';', '\t', '|').maxBy { d -> firstLines.sumOf { splitCsv(it, d).size } }
+        return parseTable(tokenize(clean, delimiter), defaultCurrency)
+    }
+
+    fun parseTable(rawTable: List<List<String>>, defaultCurrency: String): StatementParseResult {
+        val table = rawTable.filter { row -> row.any { it.isNotBlank() } }
+        if (table.isEmpty()) return StatementParseResult(emptyList(), 0, "empty file")
 
         // The header is the first row that names a date column and an amount-ish column (some banks add a preamble).
-        val headerIndex = table.indexOfFirst { row ->
-            val h = row.map { it.norm() }
-            h.any { it in DATE_HEADERS } && h.any { it in AMOUNT_HEADERS || it in DEBIT_HEADERS || it in CREDIT_HEADERS }
+        val headerIndex = table.take(40).indexOfFirst { row ->
+            val h = row.map { it.headerNorm() }
+            findCol(h, DATE_HEADERS) != null && (findCol(h, AMOUNT_HEADERS) != null || findCol(h, DEBIT_HEADERS) != null || findCol(h, CREDIT_HEADERS) != null)
         }
-        require(headerIndex >= 0) { "Couldn't find a header row with a date and an amount column" }
-        val header = table[headerIndex].map { it.norm() }
-        fun col(names: List<String>) = names.firstNotNullOfOrNull { n -> header.indexOf(n).takeIf { it >= 0 } }
-        val dateCol = col(DATE_HEADERS)!!
-        val descCol = col(DESC_HEADERS)
+        require(headerIndex >= 0) {
+            "Couldn't find the date and amount columns. The file starts with: " +
+                table.first().joinToString(" | ").take(140)
+        }
+        val header = table[headerIndex].map { it.headerNorm() }
+        val used = mutableSetOf<Int>()
+        fun col(names: List<String>) = findCol(header, names, used)?.also { used += it }
         val amountCol = col(AMOUNT_HEADERS)
         val debitCol = col(DEBIT_HEADERS)
         val creditCol = col(CREDIT_HEADERS)
-        val typeCol = col(TYPE_HEADERS)
         val currencyCol = col(CURRENCY_HEADERS)
+        val dateCol = col(DATE_HEADERS)!!
+        val descCol = col(DESC_HEADERS)
+        val typeCol = col(TYPE_HEADERS)
         require(amountCol != null || debitCol != null || creditCol != null) { "No amount column" }
+        require(descCol != null) { "Couldn't find a description column. Columns: " + table[headerIndex].joinToString(", ") }
 
         val dataRows = table.drop(headerIndex + 1)
         // Bank accounts write spending as negative; card statements write it as positive and payments as
@@ -92,7 +136,11 @@ object StatementCsv {
             }
             out += StatementRow(date, desc, value, direction, currency)
         }
-        val cols = listOfNotNull("date", descCol?.let { "description" }, amountCol?.let { "amount" }, debitCol?.let { "debit" }, creditCol?.let { "credit" }).joinToString()
+        val cols = listOfNotNull(
+            "date: " + table[headerIndex][dateCol], "description: " + table[headerIndex][descCol],
+            amountCol?.let { "amount: " + table[headerIndex][it] }, debitCol?.let { "debit: " + table[headerIndex][it] },
+            creditCol?.let { "credit: " + table[headerIndex][it] }, currencyCol?.let { "currency: " + table[headerIndex][it] },
+        ).joinToString(" · ")
         return StatementParseResult(out, skipped, cols)
     }
 
@@ -126,6 +174,8 @@ object StatementCsv {
 
     private fun parseDate(raw: String, preferred: DateTimeFormatter?): LocalDate? {
         val s = raw.trim()
+        // Excel stores dates as day numbers counted from 1899-12-30.
+        s.toDoubleOrNull()?.takeIf { it in 20_000.0..80_000.0 }?.let { return LocalDate.of(1899, 12, 30).plusDays(it.toLong()) }
         preferred?.let { f -> runCatching { return LocalDate.parse(s.take(11).trim(), f) } }
         for (p in DATE_PATTERNS) runCatching { return LocalDate.parse(s, formatter(p)) }
         runCatching { return LocalDateTime.parse(s).toLocalDate() }
@@ -136,6 +186,52 @@ object StatementCsv {
         DateTimeFormatterBuilder().parseCaseInsensitive().appendPattern(p).toFormatter(Locale.ENGLISH)
 
     private fun String.norm() = trim().trim('"').lowercase(Locale.ROOT)
+
+    /** "Billed Amount (QAR) " / "TXN. DATE" -> "billed amount (qar)" / "txn date" */
+    private fun String.headerNorm() = replace('\u00A0', ' ').trim().trim('"', '\'', '\uFEFF').lowercase(Locale.ROOT)
+        .replace(Regex("""[._]"""), " ").replace(Regex("""\s+"""), " ").trim()
+
+    private val SYNONYMS = mapOf("txn" to "transaction", "trans" to "transaction", "trx" to "transaction", "amt" to "amount", "desc" to "description", "curr" to "currency")
+
+    private fun String.expand() = split(' ').joinToString(" ") { SYNONYMS[it] ?: it }
+
+    /** Exact header match first (in priority order), then a header that contains the name as whole words. */
+    private fun findCol(header: List<String>, names: List<String>, exclude: Set<Int> = emptySet()): Int? {
+        val h = header.map { it.expand() }
+        for (n in names) h.indexOfFirst { it == n }.takeIf { it >= 0 && it !in exclude }?.let { return it }
+        for (n in names) {
+            if (n.length <= 2) continue
+            val re = Regex("""(^|[^a-z])""" + Regex.escape(n) + """([^a-z]|$)""")
+            h.indices.firstOrNull { it !in exclude && re.containsMatchIn(h[it]) }?.let { return it }
+        }
+        return null
+    }
+
+    /** Full CSV tokenizer: quoted fields may contain the delimiter, quotes ("") and line breaks. */
+    fun tokenize(text: String, delimiter: Char): List<List<String>> {
+        val rows = mutableListOf<List<String>>()
+        var row = mutableListOf<String>()
+        val sb = StringBuilder()
+        var quoted = false
+        var i = 0
+        while (i < text.length) {
+            val c = text[i]
+            when {
+                quoted && c == '"' && i + 1 < text.length && text[i + 1] == '"' -> { sb.append('"'); i++ }
+                c == '"' -> quoted = !quoted
+                !quoted && c == delimiter -> { row += sb.toString().trim(); sb.clear() }
+                !quoted && (c == '\n' || c == '\r') -> {
+                    if (c == '\r' && i + 1 < text.length && text[i + 1] == '\n') i++
+                    row += sb.toString().trim(); sb.clear()
+                    rows += row; row = mutableListOf()
+                }
+                else -> sb.append(c)
+            }
+            i++
+        }
+        if (sb.isNotEmpty() || row.isNotEmpty()) { row += sb.toString().trim(); rows += row }
+        return rows
+    }
 
     /** RFC-4180-ish split: quotes, escaped quotes, and the chosen delimiter. */
     fun splitCsv(line: String, delimiter: Char = ','): List<String> {

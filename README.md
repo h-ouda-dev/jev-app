@@ -36,7 +36,7 @@ On Samsung phones, set Heron's battery usage to **Unrestricted** (Settings → A
 Money → the history icon (or **Import past transactions** when Money is empty):
 
 - **Bank text messages, last 1, 3, 6 or 12 months.** Heron reads the SMS inbox on the phone, keeps only bank transactions (purchases, debits, credits), and ignores every other message. OTPs and promos are rejected.
-- **Bank statement (CSV).** Download a CSV from online banking or a statement email and pick it. Heron detects the layout by meaning:
+- **Bank statement (Excel .xlsx or CSV).** Download an Excel or CSV statement from online banking or a statement email and pick it. Heron detects the layout by meaning:
   - Columns: a date; a description; and either one signed amount or separate debit and credit columns. An optional type (DR/CR) or currency column is used if present.
   - Formats: most date formats, `1,234.56` and `1.234,56`, `(123.45)`, and `DR`/`CR` suffixes.
 

@@ -51,11 +51,13 @@ class HistoryImportManager(private val app: HeronApp) {
         val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(0) else null
         } ?: "statement.csv"
-        val text = context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: error("Couldn't open $name")
-        val parsed = StatementCsv.parse(text, app.settings.value.currency)
+        // Excel (.xlsx) or CSV in any common encoding.
+        val parsed = StatementCsv.parseBytes(bytes, app.settings.value.currency)
         val txs = importer.fromStatement(parsed.rows, name)
         store(txs, scanned = parsed.rows.size + parsed.skipped, sources = 1, onProgress = onProgress)
+            .copy(note = "Columns used · ${parsed.columns}")
     }
 
     private suspend fun store(

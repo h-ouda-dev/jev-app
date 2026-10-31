@@ -172,3 +172,64 @@ class CardStatementTest {
         assertEquals(app.heron.core.money.Direction.CREDIT, r.rows[2].direction)
     }
 }
+
+class XlsxStatementTest {
+    /** Builds a real .xlsx (zip of XML) like a bank export: shared strings, numbers, Excel date serials. */
+    private fun xlsx(rows: List<List<Any>>): ByteArray {
+        val strings = mutableListOf<String>()
+        fun si(s: String) = strings.indexOf(s).takeIf { it >= 0 } ?: (strings.size.also { strings += s })
+        val sheetRows = rows.mapIndexed { r, row ->
+            val cells = row.mapIndexed { c, v ->
+                val ref = "${'A' + c}${r + 1}"
+                when (v) {
+                    is Number -> "<c r=\"$ref\" s=\"1\"><v>$v</v></c>"
+                    else -> "<c r=\"$ref\" t=\"s\"><v>${si(v.toString())}</v></c>"
+                }
+            }.joinToString("")
+            "<row r=\"${r + 1}\">$cells</row>"
+        }.joinToString("")
+        val sheet = """<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>$sheetRows</sheetData></worksheet>"""
+        val sst = """<?xml version="1.0" encoding="UTF-8"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">""" +
+            strings.joinToString("") { "<si><t>${it.replace("&", "&amp;")}</t></si>" } + "</sst>"
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { z ->
+            for ((name, body) in listOf("xl/worksheets/sheet1.xml" to sheet, "xl/sharedStrings.xml" to sst, "[Content_Types].xml" to "<Types/>")) {
+                z.putNextEntry(java.util.zip.ZipEntry(name)); z.write(body.toByteArray()); z.closeEntry()
+            }
+        }
+        return out.toByteArray()
+    }
+
+    @Test fun readsBankXlsxWithBilledColumns() {
+        // 46325 = 2026-10-30 as an Excel serial date
+        val bytes = xlsx(listOf(
+            listOf("Card statement - 4421"),
+            listOf("Date", "Description", "Transaction Currency", "Transaction Amount", "Billed Amount", "Billed Currency"),
+            listOf(46325, "AMAZON.COM AMZN.COM/BILL", "USD", 25.0, 91.0, "QAR"),
+            listOf("29/10/2026", "TALABAT DOHA QA", "QAR", 64.5, 64.5, "QAR"),
+            listOf("28/10/2026", "PAYMENT - THANK YOU", "QAR", -2500, -2500, "QAR"),
+            listOf("26/10/2026", "WOQOD STATION 12", "QAR", 150, 150, "QAR"),
+        ))
+        val r = app.heron.core.money.StatementCsv.parseBytes(bytes, "QAR")
+        assertEquals(3, r.rows.size)
+        assertEquals(java.time.LocalDate.of(2026, 10, 30), r.rows[0].date)
+        assertEquals(91.0, r.rows[0].amount, 1e-9)
+        assertEquals("QAR", r.rows[0].currency)
+        assertEquals(app.heron.core.money.Direction.DEBIT, r.rows[1].direction)
+        assertTrue(r.columns, r.columns.contains("Billed Amount"))
+    }
+
+    @Test fun utf16CsvAndQuotedLineBreaks() {
+        val csv = "Txn. Date,Transaction Description,Billed Amount (QAR)\r\n30/10/2026,\"CARREFOUR\nCITY CENTER\",245.50\r\n29/10/2026,STARBUCKS,38.00\r\n"
+        val bytes = byteArrayOf(0xFF.toByte(), 0xFE.toByte()) + csv.toByteArray(Charsets.UTF_16LE)
+        val r = app.heron.core.money.StatementCsv.parseBytes(bytes, "QAR")
+        assertEquals(2, r.rows.size)
+        assertEquals(245.5, r.rows[0].amount, 1e-9)
+        assertTrue(r.rows[0].description.startsWith("CARREFOUR"))
+    }
+
+    @Test fun helpfulErrorWhenColumnsMissing() {
+        val e = runCatching { app.heron.core.money.StatementCsv.parse("Foo,Bar\n1,2\n", "QAR") }.exceptionOrNull()
+        assertTrue(e?.message.orEmpty().contains("Foo | Bar"))
+    }
+}
